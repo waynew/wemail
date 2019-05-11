@@ -1,0 +1,14 @@
+*.sw[a-p]
+*.pyc
+*.log
+*.egg-info
+*.venv/
+tags
+*.cache/
+.coverage
+*.hypothesis/
+*.zip
+*.whl
+*.gz
+*.tar
+build/

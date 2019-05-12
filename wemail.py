@@ -20,13 +20,47 @@ class MsgPrompt(Cmd):
         super().__init__()
         self.mailbox = mailbox
         self.msg = mailbox[key]
+        to = self.msg.get_all('To')
+        cc = self.msg.get_all('Cc')
+        bcc = self.msg.get_all('Bcc')
+        recipients = ''
+        if to:
+            recipients += f"To: {', '.join(to)}"
+        if cc:
+            recipients += f"Cc: {', '.join(to)}"
+        if bcc:
+            recipients += f"Bcc: {', '.join(to)}"
         self.intro = dedent(f'''\
         From: {self.msg["From"]}
-        To: {', '.join(self.msg.get_all('To'))}
         Date: {self.msg.date}
-        Subject: {self.msg.subject}
+        {recipients or 'No recipients headers found???'}
+        Subject: {' '.join(self.msg.subject.split(chr(10)))}
         ''')
         self.prompt = "action> "
+
+    def get_part(self, part_num):
+        part_num = part_num.strip()
+        parts = []
+        i = 1
+        for part in self.msg.walk():
+            content_type = part.get_content_type()
+            if content_type.startswith('multipart/'):
+                if not part_num:
+                    print(content_type)
+            else:
+                parts.append(part)
+                if not part_num:
+                    print(f'\t{i}. {content_type}')
+                i += 1
+        choice = part_num or input(f'Edit which part? (1-{i-1}): ')
+        if choice.strip():
+            try:
+                choice = int(choice)-1
+                return parts[choice]
+            except ValueError:
+                # Avoid growing memory for a typo
+                parts.clear()
+                return self.get_part('')
 
     def do_quit(self, line):
         return True
@@ -36,8 +70,9 @@ class MsgPrompt(Cmd):
         return self.do_quit(line)
 
     def do_delete(self, line):
+        print(f'line x{line}x')
         try:
-            if input('Really delete? [Y/n]: ').lower() not in ('n','no'): 
+            if line == ' ' or input('Really delete? [Y/n]: ').lower() not in ('n','no'): 
                 self.mailbox.delete(key=self.msg.key)
         except KeyboardInterrupt:
             print('Okay, never mind!')
@@ -49,36 +84,43 @@ class MsgPrompt(Cmd):
         print('Saved!')
         return True
 
+    def complete_save(self, text, line, begidx, endidx):
+        return [
+            p.name
+            for p in self.mailbox.path.glob(text+'*')
+        ]
+
+    def do_print(self, line):
+        '''
+        Print the message part.
+        '''
+        # TODO: Check terminfo and pause after height lines -W. Werner, 2019-05-12
+        part = self.get_part(line)
+        if part is None:
+            return
+        print(part.get_payload(decode=True).decode())
+
     def do_parts(self, line):
-        parts = []
-        i = 1
-        for part in self.msg.walk():
-            content_type = part.get_content_type()
-            if content_type.startswith('multipart/'):
-                if not line:
-                    print(content_type)
-            else:
-                parts.append(part)
-                if not line:
-                    print(f'\t{i}. {content_type}')
-                i += 1
-        choice = input(f'Edit which part? (1-{i-1}): ')
-        if choice.strip():
-            try:
-                choice = int(choice)-1
-                with tempfile.NamedTemporaryFile(suffix='.eml') as f:
-                    f.write(parts[choice].get_payload(decode=True))
-                    f.flush()
-                    subprocess.run([EDITOR, f.name])
-            except ValueError:
-                # Avoid growing memory for a typo
-                parts.clear()
-                return self.do_parts('')
+        part = self.get_part(line)
+        if part is None:
+            return
+        with tempfile.NamedTemporaryFile(suffix='.eml') as f:
+            f.write(part.get_payload(decode=True))
+            f.flush()
+            subprocess.call([EDITOR, f.name])
+
+    def do_raw(self, line):
+        with tempfile.NamedTemporaryFile(suffix='.eml') as f:
+            f.write(self.msg.as_bytes())
+            f.flush()
+            subprocess.call([EDITOR, f.name])
 
     # Aliases
     do_d = do_del = do_delete
     do_q = do_quit
     do_s = do_m = do_move = do_save
+    complete_s = complete_m = complete_move = complete_save
+    do_p = do_parts
 
 
 class CliMail(Cmd):
@@ -107,29 +149,13 @@ class CliMail(Cmd):
     def do_proc(self, line):
         for msg in self.mailbox:
             MsgPrompt(mailbox=self.mailbox, key=msg.key).cmdloop()
-#            print(msg.date, msg['From'])
-#            print(msg.subject)
-#            for part in msg.walk():
-#                content_type = part.get_content_type()
-#                if content_type.startswith('multipart'):
-#                    continue
-#                show = input(f'Content type is {content_type}'
-#                             f' - Display in {self.editor}? [y/N]: ')
-#                if show.strip().lower() in ('y', 'yes'):
-#                    with tempfile.NamedTemporaryFile() as f:
-#                        f.write(part.get_payload().encode())
-#                        f.flush()
-#                        subprocess.run([self.editor, f.name])
-#            action, _, rest = input('Action: ').partition(' ')
-#            if action == 'quit':
-#                return
-#            elif action in ('s', 'save'):
-#                folder = rest
-#                self.mailbox.move_to(key=msg.key, folder=folder)
-#            elif action in ('d', 'del'):
-#                confirm = input('Really delete? [Y/n]: ')
-#                if confirm.strip().lower() in ('', 'y', 'yes'):
-#                    self.mailbox.delete(key=msg.key)
+
+    def do_check(self, line):
+        '''
+        Check for new mail.
+        '''
+        count = self.mailbox.check_new()
+        print(f'{count} new message{"s" if count != 1 else ""}')
 
     do_q = do_quit
 
@@ -182,12 +208,12 @@ class WeMaildir:
         If new mail is found, move it to /cur and return True.
         If no new mail is found, return False.
         '''
-        has_any = False
+        count = 0
         for file in self._newpath.iterdir():
-            has_any = True
+            count += 1
             newname = self._curpath / file.name
             file.rename(newname)
-        return has_any
+        return count
 
     def move_to(self, *, key, folder):
         '''

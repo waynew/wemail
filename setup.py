@@ -6,7 +6,7 @@ tests_require = [
 ]
 setup(
     name='wemail',
-    version='0.0.0.dev4',
+    version='0.1.0',
     author='Wayne Werner',
     author_email='waynejwerner@gmail.com',
     url='https://github.com/waynew/wemail',

@@ -1,0 +1,24 @@
+
+The changelog format is based on [Keep 
+a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+
+## [Unreleased]
+
+## [0.1.0] - 2019.05.14
+
+## Changed
+
+- Fixed date header fallback
+- Fixed subject encoding fallback
+
+## [0.1.0] - 2019.05.12
+
+Minimally useful product released.
+
+### Added
+
+- Ability to process a maildir-style folder
+- Ability to view parts of messages
+- Ability to save messages in new directories
+

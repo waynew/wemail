@@ -181,7 +181,10 @@ class WeMaildir:
             for part in decode_header(msg['subject']):
                 data, encoding = part
                 if encoding is None:
-                    subject += data
+                    try:
+                        subject += data
+                    except TypeError:
+                        subject += data.decode()
                 else:
                     subject += data.decode(encoding)
             msg.subject = subject

@@ -174,7 +174,9 @@ class WeMaildir:
         with mailfile.open('rb') as f:
             msg = self._parser.parse(f)
             msg.key = f.name
-            msg.date = parsedate_to_datetime(msg['Date'])
+            msg.date = None
+            if msg['Date']:
+                msg.date = parsedate_to_datetime(msg['Date'])
             subject = ''
             for part in decode_header(msg['subject']):
                 data, encoding = part

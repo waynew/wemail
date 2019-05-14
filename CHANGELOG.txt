@@ -5,9 +5,18 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [0.1.0] - 2019.05.14
+---
 
-## Changed
+## [0.1.2]
+
+### Added
+
+- Ability to change directories
+- `headers` command (alias `h`) to (re-)dislpay message headers
+
+## [0.1.1] - 2019.05.14
+
+### Changed
 
 - Fixed date header fallback
 - Fixed subject encoding fallback

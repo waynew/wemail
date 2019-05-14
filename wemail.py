@@ -20,22 +20,7 @@ class MsgPrompt(Cmd):
         super().__init__()
         self.mailbox = mailbox
         self.msg = mailbox[key]
-        to = self.msg.get_all('To')
-        cc = self.msg.get_all('Cc')
-        bcc = self.msg.get_all('Bcc')
-        recipients = ''
-        if to:
-            recipients += f"To: {', '.join(to)}"
-        if cc:
-            recipients += f"Cc: {', '.join(to)}"
-        if bcc:
-            recipients += f"Bcc: {', '.join(to)}"
-        self.intro = dedent(f'''\
-        From: {self.msg["From"]}
-        Date: {self.msg.date}
-        {recipients or 'No recipients headers found???'}
-        Subject: {' '.join(self.msg.subject.split(chr(10)))}
-        ''')
+        self.do_header('')
         self.prompt = "action> "
 
     def get_part(self, part_num):
@@ -115,12 +100,35 @@ class MsgPrompt(Cmd):
             f.flush()
             subprocess.call([EDITOR, f.name])
 
+    def do_header(self, line):
+        '''
+        Display the message headers.
+        '''
+        to = self.msg.get_all('To')
+        cc = self.msg.get_all('Cc')
+        bcc = self.msg.get_all('Bcc')
+        recipients = ''
+        if to:
+            recipients += f"To: {', '.join(to)}"
+        if cc:
+            recipients += f"Cc: {', '.join(to)}"
+        if bcc:
+            recipients += f"Bcc: {', '.join(to)}"
+        print(dedent(f'''\
+        From: {self.msg["From"]}
+        Date: {self.msg.date}
+        {recipients or 'No recipients headers found???'}
+        Subject: {' '.join(self.msg.subject.split(chr(10)))}
+        '''))
+
+
     # Aliases
     do_d = do_del = do_delete
+    do_h = do_header
+    do_p = do_parts
     do_q = do_quit
     do_s = do_m = do_move = do_save
     complete_s = complete_m = complete_move = complete_save
-    do_p = do_parts
 
 
 class CliMail(Cmd):
@@ -131,7 +139,7 @@ class CliMail(Cmd):
 
     @property
     def prompt(self):
-        return f'WEmail - {self.mailbox.msg_count}> '
+        return f'WEmail - {self.mailbox.msg_count} {self.mailbox.curpath.name}> '
 
     def do_quit(self, line):
         print('Okay bye!')
@@ -140,6 +148,23 @@ class CliMail(Cmd):
     def do_EOF(self, line):
         print()
         return self.do_quit(line)
+
+    def complete_cd(self, text, line, begidx, endidx):
+        return [
+            p.name
+            for p in self.mailbox.path.glob(text+'*')
+        ]
+
+    def do_cd(self, line):
+        line = line.lstrip('.')
+        if line:
+            newpath = self.mailbox.path / line
+            if not newpath.is_dir():
+                print(f'Error, no directory {newpath}')
+            else:
+                self.mailbox.curpath = newpath
+        else:
+            self.mailbox.curpath = self.mailbox._curpath
 
     def do_ls(self, line):
         if not line.strip():
@@ -163,14 +188,15 @@ class CliMail(Cmd):
 class WeMaildir:
     def __init__(self, path):
         self.path = Path(path)
+        self.curpath = self._curpath
         self._parser = BytesParser()
 
     def __iter__(self):
-        for file in (self._curpath).iterdir():
+        for file in (self.curpath).iterdir():
             yield self[file.name]
 
     def __getitem__(self, key):
-        mailfile = self._curpath / key
+        mailfile = self.curpath / key
         with mailfile.open('rb') as f:
             msg = self._parser.parse(f)
             msg.key = f.name
@@ -200,7 +226,7 @@ class WeMaildir:
 
     @property
     def msg_count(self):
-        return sum(1 for _ in self._curpath.iterdir())
+        return sum(1 for _ in self.curpath.iterdir())
 
     @property
     def has_new(self):
@@ -224,7 +250,7 @@ class WeMaildir:
         '''
         Move the message given by ``key`` to the provided ``folder``.
         '''
-        f = self._curpath / key
+        f = self.curpath / key
         newname = self.path / folder / f.name
         newname.parent.mkdir(parents=True, exist_ok=True)
         f.rename(newname)
@@ -233,7 +259,7 @@ class WeMaildir:
         '''
         Delete the message given by ``key``.
         '''
-        (self._curpath / key).unlink()
+        (self.curpath / key).unlink()
 
 
 def do_it():  # Shia LeBeouf!

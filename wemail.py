@@ -11,6 +11,7 @@ from pathlib import Path
 from textwrap import dedent
 
 
+__version__ = '0.1.3'
 EDITOR = os.environ.get('EDITOR', 'nano')
 POLICY = EmailPolicy(utf8=True)
 
@@ -54,8 +55,16 @@ class MsgPrompt(Cmd):
         print()
         return self.do_quit(line)
 
+    def do_D(self, line):
+        '''
+        Delete immediately - no take backs.
+        '''
+        return self.do_delete(' ')
+
     def do_delete(self, line):
-        print(f'line x{line}x')
+        '''
+        Delete message with confirmation.
+        '''
         try:
             if line == ' ' or input('Really delete? [Y/n]: ').lower() not in ('n','no'): 
                 self.mailbox.delete(key=self.msg.key)
@@ -84,6 +93,12 @@ class MsgPrompt(Cmd):
         if part is None:
             return
         print(part.get_payload(decode=True).decode())
+
+    def do_p1(self, line):
+        '''
+        View part 1 in the external editor.
+        '''
+        return self.do_parts('1')
 
     def do_parts(self, line):
         part = self.get_part(line)
@@ -263,7 +278,10 @@ class WeMaildir:
 
 
 def do_it():  # Shia LeBeouf!
-    if len(sys.argv) > 1:
+    if '--version' in sys.argv or '-v' in sys.argv:
+        print(__version__)
+        return
+    elif len(sys.argv) > 1:
         emaildir = Path(sys.argv[1])
     else:
         emaildir = Path(os.environ.get('WEMAIL_DIR', '~/Maildir'))

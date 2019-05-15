@@ -7,19 +7,27 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.3]
+
+### Added
+
+- `p1` shortcut to view the first part of a message, probably `text/plain`.
+- `D` shortcut added to delete a message without confirmation.
+- '-v'/ '--version' command to check version.
+
 ## [0.1.2]
 
 ### Added
 
-- Ability to change directories
-- `headers` command (alias `h`) to (re-)dislpay message headers
+- Ability to change directories.
+- `headers` command (alias `h`) to (re-)dislpay message headers.
 
 ## [0.1.1] - 2019.05.14
 
 ### Changed
 
-- Fixed date header fallback
-- Fixed subject encoding fallback
+- Fixed date header fallback.
+- Fixed subject encoding fallback.
 
 ## [0.1.0] - 2019.05.12
 
@@ -27,7 +35,6 @@ Minimally useful product released.
 
 ### Added
 
-- Ability to process a maildir-style folder
-- Ability to view parts of messages
-- Ability to save messages in new directories
-
+- Ability to process a maildir-style folder.
+- Ability to view parts of messages.
+- Ability to save messages in new directories.

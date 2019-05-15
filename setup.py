@@ -1,12 +1,19 @@
+from pathlib import Path
 from setuptools import setup
 
+wemail = Path(__file__).parent / 'wemail.py'
+with wemail.open('r') as f:
+    for line in f:
+        if line.startswith('__version__'):
+            __version__ = line.partition('=')[-1].strip().strip('"').strip("'")
+            break
 
 tests_require = [
     'pytest',
 ]
 setup(
     name='wemail',
-    version='0.1.2',
+    version=__version__,
     author='Wayne Werner',
     author_email='waynejwerner@gmail.com',
     url='https://github.com/waynew/wemail',

@@ -7,6 +7,11 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.5]
+
+- Setting `WEMAIL_CHECK_FOR_UPDATES` env var now allows automagic upgrades.
+- `version` command now displays WEmail version.
+
 ## [0.1.4]
 
 ### Added

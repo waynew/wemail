@@ -12,7 +12,7 @@ from pathlib import Path
 from textwrap import dedent
 
 
-__version__ = '0.1.4'
+__version__ = '0.1.5'
 EDITOR = os.environ.get('EDITOR', 'nano')
 POLICY = EmailPolicy(utf8=True)
 
@@ -208,6 +208,12 @@ class CliMail(Cmd):
         count = self.mailbox.check_new()
         print(f'{count} new message{"s" if count != 1 else ""}')
 
+    def do_version(self, line):
+        '''
+        Display WEmail version info.
+        '''
+        print(f'{__version__}')
+
     do_q = do_quit
 
 
@@ -289,6 +295,66 @@ class WeMaildir:
 
 
 def do_it():  # Shia LeBeouf!
+    if os.environ.get('WEMAIL_CHECK_FOR_UPDATES'):
+        cmd = [
+            sys.executable,
+            '-m',
+            'pip',
+            'search',
+            'wemail',
+        ]
+        print('Checking for updates...')
+        output = subprocess.check_output(cmd).decode().split('\n')
+        installed = next(
+            line
+            for line in output
+            if line.strip().startswith('INSTALLED')
+        )
+        latest = next(
+            (
+                line
+                for line in output
+                if line.strip().startswith('LATEST')
+            ),
+            None
+        )
+        if installed and not installed.endswith(' (latest)'):
+            latest_version = latest.rsplit(' ', maxsplit=1)[-1]
+            choice = input(
+                f'New version {latest_version} available, upgrade? [Y/n]:'
+            )
+            if choice not in ('n', 'no'):
+                cmd = [
+                    sys.executable,
+                    '-m',
+                    'pip',
+                    'install',
+                    '--user',  # There may be a better way
+                    '--upgrade',
+                    'wemail',
+                ]
+                try:
+                    print(f'Upgrading to {latest_version}...')
+                    output = subprocess.check_output(cmd)
+                except subprocess.CalledProcessError as e:
+                    print('Error upgrading wemail:', e)
+                    sys.exit()
+                else:
+                    # No reason to check for updates *again*
+                    env = os.environ.copy()
+                    del env['WEMAIL_CHECK_FOR_UPDATES']
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            '-m',
+                            'wemail',
+                            *sys.argv[1:],
+                        ],
+                        env=env,
+                    )
+                    return
+            else:
+                print('Okay! Not upgrading...')
     if '--version' in sys.argv or '-v' in sys.argv:
         print(__version__)
         return

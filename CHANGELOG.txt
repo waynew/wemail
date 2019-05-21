@@ -7,6 +7,12 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.4]
+
+### Added
+
+- `body` shortcut, to print the message body.
+
 ## [0.1.3]
 
 ### Added

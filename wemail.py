@@ -4,6 +4,7 @@ import sys
 import tempfile
 from cmd import Cmd
 from email.header import decode_header
+from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import EmailPolicy
 from email.utils import parsedate_to_datetime
@@ -11,7 +12,7 @@ from pathlib import Path
 from textwrap import dedent
 
 
-__version__ = '0.1.3'
+__version__ = '0.1.4'
 EDITOR = os.environ.get('EDITOR', 'nano')
 POLICY = EmailPolicy(utf8=True)
 
@@ -93,6 +94,16 @@ class MsgPrompt(Cmd):
         if part is None:
             return
         print(part.get_payload(decode=True).decode())
+
+    def do_body(self, line):
+        '''
+        Print the message body - text/plain if it exists
+        '''
+        print(
+            self.msg.get_body(
+                preferencelist=('related', 'plain', 'html')
+            ).get_content()
+        )
 
     def do_p1(self, line):
         '''
@@ -204,7 +215,7 @@ class WeMaildir:
     def __init__(self, path):
         self.path = Path(path)
         self.curpath = self._curpath
-        self._parser = BytesParser()
+        self._parser = BytesParser(_class=EmailMessage, policy=POLICY)
 
     def __iter__(self):
         for file in (self.curpath).iterdir():

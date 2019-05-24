@@ -7,7 +7,15 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.7]
+
+### Changed
+
+- Removed testing To: email and CC: field.
+
 ## [0.1.6]
+
+### Added
 
 - Config file! ~/.wemailrc, a JSON file
 - Composing emails! works with `c` or `compose'
@@ -15,6 +23,8 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
   using `reply`.
 
 ## [0.1.5]
+
+### Added
 
 - Setting `WEMAIL_CHECK_FOR_UPDATES` env var now allows automagic upgrades.
 - `version` command now displays WEmail version.

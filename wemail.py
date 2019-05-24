@@ -24,7 +24,7 @@ try:
 except ImportError:
     commonmark = None
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 
@@ -346,8 +346,7 @@ class CliMail(Cmd):
         """
         from_addr = self.config.get(line, self.config.get("DEFAULT_FROM"))
         msg = MIMEText("")
-        msg["To"] = "test@waynewerner.com"
-        msg["Cc"] = ""
+        msg["To"] = ""
         for header in self.config[from_addr]["HEADERS"]:
             msg[header] = self.config[from_addr]["HEADERS"][header]
         self.mailbox.draftpath.mkdir(exist_ok=True, parents=True)

@@ -7,6 +7,15 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.8]
+
+### Added
+
+- Ability to do a quick command, e.g. `proc reply` to quickly reply to the
+  first message.
+- Added `On <date> at <time>, <sender> wrote:` to reply text.
+
+
 ## [0.1.7]
 
 ### Changed

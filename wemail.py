@@ -13,7 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.parser import BytesParser
 from email.policy import EmailPolicy
-from email.utils import getaddresses, formatdate
+from email.utils import getaddresses, formatdate, parsedate_to_datetime
 from email.utils import parsedate_to_datetime
 from itertools import chain
 from pathlib import Path
@@ -24,7 +24,7 @@ try:
 except ImportError:
     commonmark = None
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 
@@ -237,8 +237,23 @@ class MsgPrompt(Cmd):
         """
         Reply to the original sender. Add 'all' to reply to all.
         """
+        try:
+            from_addr = self.msg.get("From").addresses[0]
+            sender = from_addr.display_name or str(from_addr)
+        except IndexError:
+            sender = "Unknown"
+
+        try:
+            date = parsedate_to_datetime(self.msg['Date'])
+        except KeyError:
+            date = "a day in the past"
+        except TypeError:
+            date = self.msg['Date']
+        else:
+            date = date.strftime('%a, %B %d, %Y at %H:%M:%S%p %z').rstrip()
+
         re_msg = MIMEText(
-            "> "
+            f"On {date}, {sender} wrote:\n> "
             + self.msg.get_body(preferencelist=("related", "plain", "html"))
             .get_content()
             .replace("\n", "\n> ")
@@ -391,10 +406,16 @@ class CliMail(Cmd):
         To interrupt processing, use qq.
         """
         if line:
-            line = int(line)
-            MsgPrompt(
-                mailbox=self.mailbox, key=self.mailbox[line], config=self.config
-            ).cmdloop()
+            try:
+                line = int(line)
+                MsgPrompt(
+                    mailbox=self.mailbox, key=self.mailbox[line], config=self.config
+                ).cmdloop()
+            except ValueError:
+                msg = next(iter(self.mailbox))
+                MsgPrompt(
+                    mailbox=self.mailbox, key=msg.key, config=self.config
+                ).onecmd(line)
         else:
             for msg in self.mailbox:
                 p = MsgPrompt(mailbox=self.mailbox, key=msg.key, config=self.config)

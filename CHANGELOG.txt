@@ -7,6 +7,13 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.6]
+
+- Config file! ~/.wemailrc, a JSON file
+- Composing emails! works with `c` or `compose'
+- Replying to emails! When processing emails now it's possible to reply
+  using `reply`.
+
 ## [0.1.5]
 
 - Setting `WEMAIL_CHECK_FOR_UPDATES` env var now allows automagic upgrades.

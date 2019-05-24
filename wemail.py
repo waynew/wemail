@@ -1,25 +1,81 @@
+import json
 import os
+import smtplib
 import subprocess
 import sys
 import tempfile
+import time
+
 from cmd import Cmd
 from email.header import decode_header
 from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from email.parser import BytesParser
 from email.policy import EmailPolicy
+from email.utils import getaddresses, formatdate
 from email.utils import parsedate_to_datetime
+from itertools import chain
 from pathlib import Path
 from textwrap import dedent
 
+try:
+    from commonmark import commonmark
+except ImportError:
+    commonmark = None
 
 __version__ = '0.1.5'
-EDITOR = os.environ.get('EDITOR', 'nano')
 POLICY = EmailPolicy(utf8=True)
+CONFIG_PATH = Path('~/.wemailrc').expanduser()
+class WEmailError(Exception): pass
+class WEmailMissingCommonmark(WEmailError): pass
+
+
+def commonmarkdown(plain_msg):
+    '''
+    CommonMark-ify the provided msg. Return a multipart email with
+    both text and HTML parts.
+    '''
+    if commonmark is None:
+        raise WEmailMissingCommonmark('Cannot CommonMarkdown message. {sys.executable -m pip install --user commonmark} and try again.')
+    html = commonmark(plain_msg.get_payload())
+    msg = MIMEMultipart('alternative')
+    for key in plain_msg.keys():
+        for val in plain_msg.get_all(key):
+            if key.lower() == 'x-commonmark':
+                continue
+            msg[key] = val
+    msg.attach(MIMEText(plain_msg.get_payload()))
+    msg.attach(MIMEText(html, 'html'))
+    return msg
+
+
+def send_message(*, msg, smtp_host='localhost', smtp_port=25,
+        use_tls=False, use_smtps=False, username=None, password=None,
+        ):
+    sender = msg.get('From')
+    recipients = getaddresses(chain(
+        msg.get_all('To', []),
+        msg.get_all('Cc', []),
+        msg.get_all('Bcc', []),
+    ))
+    if not msg.get('Date'):
+        msg['Date'] = formatdate()
+    SMTP = smtplib.SMTP_SSL if use_smtps else smtplib.SMTP
+    with SMTP(host=smtp_host, port=smtp_port) as smtp:
+        if use_tls:
+            smtp.starttls()
+        smtp.ehlo()
+        if username or password:
+            smtp.login(username, password)
+        smtp.send_message(msg, from_addr=sender, to_addrs=[addr for _, addr in recipients])
 
 
 class MsgPrompt(Cmd):
-    def __init__(self, *, mailbox, key):
+    def __init__(self, *, mailbox, key, config):
         super().__init__()
+        self.result = None
+        self.config = config
         self.mailbox = mailbox
         self.msg = mailbox[key]
         self.do_header('')
@@ -48,6 +104,19 @@ class MsgPrompt(Cmd):
                 # Avoid growing memory for a typo
                 parts.clear()
                 return self.get_part('')
+
+    def do_key(self, line):
+        '''
+        Print the current message's key.
+        '''
+        print(self.msg.key)
+
+    def do_qq(self, line):
+        '''
+        Abort further email processing.
+        '''
+        self.result = 'abort'
+        return True
 
     def do_quit(self, line):
         return True
@@ -118,13 +187,13 @@ class MsgPrompt(Cmd):
         with tempfile.NamedTemporaryFile(suffix='.eml') as f:
             f.write(part.get_payload(decode=True))
             f.flush()
-            subprocess.call([EDITOR, f.name])
+            subprocess.call([self.config['EDITOR'], f.name])
 
     def do_raw(self, line):
         with tempfile.NamedTemporaryFile(suffix='.eml') as f:
             f.write(self.msg.as_bytes())
             f.flush()
-            subprocess.call([EDITOR, f.name])
+            subprocess.call([self.config['EDITOR'], f.name])
 
     def do_header(self, line):
         '''
@@ -147,6 +216,57 @@ class MsgPrompt(Cmd):
         Subject: {' '.join(self.msg.subject.split(chr(10)))}
         '''))
 
+    def do_reply(self, line):
+        '''
+        Reply to the original sender. Add 'all' to reply to all.
+        '''
+        re_msg = MIMEText(
+            '> '+self.msg.get_body(
+                preferencelist=('related', 'plain', 'html')
+            ).get_content().replace('\n', '\n> ')
+        )
+        re_msg['To'] = ', '.join(str(a) for s in self.msg.get_all('From') for a in s.addresses)
+        if line == 'all':
+            re_msg['Cc'] = ', '.join(str(a) for s in chain(self.msg.get_all('Cc', []), self.msg.get_all('Bcc', [])) for a in s.addresses)
+        # TODO: Figure out which one of our addresses this was sent to -W. Werner, 2019-05-23
+        addr = self.config.get('DEFAULT_FROM')
+        re_msg['Subject'] = f'Re: {self.msg.subject}'
+        for header in self.config[addr]['HEADERS']:
+            if header.lower() != 'subject':
+                re_msg[header] = self.config[addr]['HEADERS'][header]
+
+        with tempfile.NamedTemporaryFile(suffix='.eml') as f:
+            f.write(re_msg.as_bytes(policy=POLICY))
+            f.flush()
+            subprocess.call([self.config['EDITOR'], f.name])
+            f.seek(0)
+            re_msg = self.mailbox._parser.parse(f)
+
+        print('='*20)
+        print(str(re_msg))
+        print('='*20)
+        choice = input('Send message? [Y/n]:')
+        if choice.lower() not in ('n', 'no'):
+            abort_time = self.config.get('ABORT_TIMEOUT')
+            while abort_time:
+                print(f'\rSending in {abort_time}s', end='')
+                sys.stdout.flush()
+                time.sleep(1)
+                abort_time -= 1
+            print('\rSending message...', end='')
+            sys.stdout.flush()
+            if re_msg.get('X-CommonMark', '').lower() in ('yes', 'y', 'true', '1'):
+                re_msg = commonmarkdown(re_msg)
+            send_message(
+                smtp_host=self.config[addr]['SMTP_HOST'],
+                smtp_port=self.config[addr]['SMTP_PORT'],
+                use_tls=self.config[addr].get('SMTP_USE_TLS'),
+                username=self.config[addr].get('SMTP_USERNAME'),
+                password=self.config[addr].get('SMTP_PASSWORD'),
+                msg=re_msg,
+            )
+            print('Sent!')
+
 
     # Aliases
     do_d = do_del = do_delete
@@ -158,14 +278,22 @@ class MsgPrompt(Cmd):
 
 
 class CliMail(Cmd):
-    def __init__(self, mailbox):
+    def __init__(self, mailbox, config):
         super().__init__()
+        self.config = config
         self.mailbox = mailbox
-        self.editor = os.environ.get('EDITOR', 'nano')
+        self.editor = config['EDITOR']
 
     @property
     def prompt(self):
         return f'WEmail - {self.mailbox.msg_count} {self.mailbox.curpath.name}> '
+
+    def edit(self, filename):
+        try:
+            filename = filename.name
+        except AttributeError:
+            pass  # It's probably a real filename
+        subprocess.call([self.editor, filename])
 
     def do_quit(self, line):
         print('Okay bye!')
@@ -192,14 +320,66 @@ class CliMail(Cmd):
         else:
             self.mailbox.curpath = self.mailbox._curpath
 
+    def do_compose(self, line):
+        '''
+        Compose a new email message using the default or optional role.
+        '''
+        from_addr = self.config.get(line, self.config.get('DEFAULT_FROM'))
+        msg = MIMEText('')
+        msg['To'] = 'test@waynewerner.com'
+        msg['Cc'] = ''
+        for header in self.config[from_addr]['HEADERS']:
+            msg[header] = self.config[from_addr]['HEADERS'][header]
+        self.mailbox.draftpath.mkdir(exist_ok=True, parents=True)
+        with tempfile.NamedTemporaryFile(dir=self.mailbox.draftpath, suffix='.eml', delete=False) as f:
+            f.write(msg.as_bytes(policy=POLICY))
+            f.flush()
+            self.edit(f)
+            f.seek(0)
+        with open(f.name, 'rb') as f:
+            msg = self.mailbox._parser.parse(f)
+            print(msg)
+            if msg.get('X-CommonMark', '').lower() in ('yes', 'y', 'true', '1'):
+                msg = commonmarkdown(msg)
+        choice = input('Send email? [Y/n]:')
+        if choice.lower() in ('n', 'no'):
+            print(f'Draft saved as {f.name}')
+        else:
+            print('Sending message...', end='')
+            sys.stdout.flush()
+            send_message(
+                smtp_host=self.config[from_addr]['SMTP_HOST'],
+                smtp_port=self.config[from_addr]['SMTP_PORT'],
+                use_tls=self.config[from_addr].get('SMTP_USE_TLS'),
+                username=self.config[from_addr].get('SMTP_USERNAME'),
+                password=self.config[from_addr].get('SMTP_PASSWORD'),
+                msg=msg,
+            )
+            Path(f.name).unlink()
+            print(' Sent!')
+
     def do_ls(self, line):
         if not line.strip():
             for msg in self.mailbox:
                 print(msg.date, msg['From'])
 
     def do_proc(self, line):
-        for msg in self.mailbox:
-            MsgPrompt(mailbox=self.mailbox, key=msg.key).cmdloop()
+        '''
+        Process emails one at a time.
+
+        To interrupt processing, use qq.
+        '''
+        if line:
+            line = int(line)
+            MsgPrompt(mailbox=self.mailbox,
+                    key=self.mailbox[line],
+                    config=self.config).cmdloop()
+        else:
+            for msg in self.mailbox:
+                p = MsgPrompt(mailbox=self.mailbox, key=msg.key, config=self.config)
+                p.cmdloop()
+                if p.result == 'abort':
+                    return
 
     def do_check(self, line):
         '''
@@ -215,16 +395,18 @@ class CliMail(Cmd):
         print(f'{__version__}')
 
     do_q = do_quit
+    do_c = do_compose
 
 
 class WeMaildir:
-    def __init__(self, path):
-        self.path = Path(path)
+    def __init__(self, config):
+        self.config = config
+        self.path = Path(config["MAILDIR"])
         self.curpath = self._curpath
         self._parser = BytesParser(_class=EmailMessage, policy=POLICY)
 
     def __iter__(self):
-        for file in (self.curpath).iterdir():
+        for file in reversed(sorted(list(self.curpath.iterdir()))):
             yield self[file.name]
 
     def __getitem__(self, key):
@@ -255,6 +437,10 @@ class WeMaildir:
     @property
     def _curpath(self):
         return self.path / 'cur'
+
+    @property
+    def draftpath(self):
+        return self.path / 'draft'
 
     @property
     def msg_count(self):
@@ -294,86 +480,104 @@ class WeMaildir:
         (self.curpath / key).unlink()
 
 
-def do_it():  # Shia LeBeouf!
-    if os.environ.get('WEMAIL_CHECK_FOR_UPDATES'):
-        cmd = [
-            sys.executable,
-            '-m',
-            'pip',
-            'search',
-            'wemail',
-        ]
-        print('Checking for updates...')
-        output = subprocess.check_output(cmd).decode().split('\n')
-        installed = next(
+def update():
+    '''
+    Update wemail if updates are available.
+    '''
+    cmd = [
+        sys.executable,
+        '-m',
+        'pip',
+        'search',
+        'wemail',
+    ]
+    print('Checking for updates...')
+    output = subprocess.check_output(cmd).decode().split('\n')
+    installed = next(
+        line
+        for line in output
+        if line.strip().startswith('INSTALLED')
+    )
+    latest = next(
+        (
             line
             for line in output
-            if line.strip().startswith('INSTALLED')
+            if line.strip().startswith('LATEST')
+        ),
+        None
+    )
+    if installed and not installed.endswith(' (latest)'):
+        latest_version = latest.rsplit(' ', maxsplit=1)[-1]
+        choice = input(
+            f'New version {latest_version} available, upgrade? [Y/n]:'
         )
-        latest = next(
-            (
-                line
-                for line in output
-                if line.strip().startswith('LATEST')
-            ),
-            None
-        )
-        if installed and not installed.endswith(' (latest)'):
-            latest_version = latest.rsplit(' ', maxsplit=1)[-1]
-            choice = input(
-                f'New version {latest_version} available, upgrade? [Y/n]:'
-            )
-            if choice not in ('n', 'no'):
-                cmd = [
-                    sys.executable,
-                    '-m',
-                    'pip',
-                    'install',
-                    '--user',  # There may be a better way
-                    '--upgrade',
-                    'wemail',
-                ]
-                try:
-                    print(f'Upgrading to {latest_version}...')
-                    output = subprocess.check_output(cmd)
-                except subprocess.CalledProcessError as e:
-                    print('Error upgrading wemail:', e)
-                    sys.exit()
-                else:
-                    # No reason to check for updates *again*
-                    env = os.environ.copy()
-                    del env['WEMAIL_CHECK_FOR_UPDATES']
-                    subprocess.run(
-                        [
-                            sys.executable,
-                            '-m',
-                            'wemail',
-                            *sys.argv[1:],
-                        ],
-                        env=env,
-                    )
-                    return
+        if choice not in ('n', 'no'):
+            cmd = [
+                sys.executable,
+                '-m',
+                'pip',
+                'install',
+                '--user',  # There may be a better way
+                '--upgrade',
+                'wemail',
+            ]
+            try:
+                print(f'Upgrading to {latest_version}...')
+                output = subprocess.check_output(cmd)
+            except subprocess.CalledProcessError as e:
+                print('Error upgrading wemail:', e)
+                sys.exit()
             else:
-                print('Okay! Not upgrading...')
+                # No reason to check for updates *again*
+                env = os.environ.copy()
+                del env['WEMAIL_CHECK_FOR_UPDATES']
+                subprocess.run(
+                    [
+                        sys.executable,
+                        '-m',
+                        'wemail',
+                        *sys.argv[1:],
+                    ],
+                    env=env,
+                )
+                return
+        else:
+            print('Okay! Not upgrading...')
+
+
+def do_it():  # Shia LeBeouf!
+    config = {
+        'CHECK_FOR_UPDATES': os.environ.get('WEMAIL_CHECK_FOR_UPDATES', False),
+        'EDITOR': os.environ.get(
+            'EDITOR',
+            os.environ.get('VISUAL', 'nano'),
+        ),
+        'MAILDIR': Path(os.environ.get('WEMAIL_DIR', '~/Maildir')),
+    }
+    if CONFIG_PATH.exists():
+        with CONFIG_PATH.open() as cf:
+            config.update(json.load(cf))
+
+    if config['CHECK_FOR_UPDATES']:
+        update()
+
     if '--version' in sys.argv or '-v' in sys.argv:
         print(__version__)
         return
     elif len(sys.argv) > 1:
-        emaildir = Path(sys.argv[1])
-    else:
-        emaildir = Path(os.environ.get('WEMAIL_DIR', '~/Maildir'))
+        config['MAILDIR'] = Path(sys.argv[1])
 
-    if not emaildir.exists():
-        sys.exit(f'Maildir {str(emaildir)!r} does not exist.')
+    if not config['MAILDIR'].exists():
+        sys.exit(f'Maildir {str(config["MAILDIR"])!r} does not exist.')
 
-    mailbox = WeMaildir(emaildir)
+    mailbox = WeMaildir(config)
     # TODO: Try to import curses and do a curses UI -W. Werner, 2019-05-10
     # It should basically be a clone(ish) of Alpine, which I love, but isn't
     # quite as awesome as I really want.
     # The exceptional case shoule be running the CliMail - or if there was
     # an option passed on the command line
     try:
-        CliMail(mailbox).cmdloop()
+        CliMail(mailbox, config=config).cmdloop()
     except KeyboardInterrupt:
         print()
         print('^C caught, goodbye!')

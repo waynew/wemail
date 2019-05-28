@@ -244,13 +244,13 @@ class MsgPrompt(Cmd):
             sender = "Unknown"
 
         try:
-            date = parsedate_to_datetime(self.msg['Date'])
+            date = parsedate_to_datetime(self.msg["Date"])
         except KeyError:
             date = "a day in the past"
         except TypeError:
-            date = self.msg['Date']
+            date = self.msg["Date"]
         else:
-            date = date.strftime('%a, %B %d, %Y at %H:%M:%S%p %z').rstrip()
+            date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
 
         re_msg = MIMEText(
             f"On {date}, {sender} wrote:\n> "
@@ -413,9 +413,9 @@ class CliMail(Cmd):
                 ).cmdloop()
             except ValueError:
                 msg = next(iter(self.mailbox))
-                MsgPrompt(
-                    mailbox=self.mailbox, key=msg.key, config=self.config
-                ).onecmd(line)
+                MsgPrompt(mailbox=self.mailbox, key=msg.key, config=self.config).onecmd(
+                    line
+                )
         else:
             for msg in self.mailbox:
                 p = MsgPrompt(mailbox=self.mailbox, key=msg.key, config=self.config)

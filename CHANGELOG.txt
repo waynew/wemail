@@ -7,6 +7,10 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.9]
+
+- Fix `~`-prefixed maildir paths.
+
 ## [0.1.8]
 
 ### Added

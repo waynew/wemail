@@ -24,7 +24,7 @@ try:
 except ImportError:
     commonmark = None
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 
@@ -564,7 +564,7 @@ def do_it():  # Shia LeBeouf!
     config = {
         "CHECK_FOR_UPDATES": os.environ.get("WEMAIL_CHECK_FOR_UPDATES", False),
         "EDITOR": os.environ.get("EDITOR", os.environ.get("VISUAL", "nano")),
-        "MAILDIR": Path(os.environ.get("WEMAIL_DIR", "~/Maildir")),
+        "MAILDIR": os.environ.get("WEMAIL_DIR", "~/Maildir"),
     }
     if CONFIG_PATH.exists():
         with CONFIG_PATH.open() as cf:
@@ -577,7 +577,8 @@ def do_it():  # Shia LeBeouf!
         print(__version__)
         return
     elif len(sys.argv) > 1:
-        config["MAILDIR"] = Path(sys.argv[1])
+        config["MAILDIR"] = sys.argv[1]
+    config["MAILDIR"] = Path(config["MAILDIR"]).expanduser()
 
     if not config["MAILDIR"].exists():
         sys.exit(f'Maildir {str(config["MAILDIR"])!r} does not exist.')

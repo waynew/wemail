@@ -33,7 +33,7 @@ except ImportError:
     except ImportError:
         commonmark = None
 
-__version__ = "0.1.10"
+__version__ = "0.1.11"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -100,13 +100,19 @@ def get_headers(*, mailfile):
 
 def compose(*, editor, sender, to, default_headers=None):
     msg = EmailMessage(policy=POLICY)
-    msg["From"] = sender
-    # msg["To"] = to
-    default_headers = default_headers or {}
-    for header in default_headers:
-        if header.lower() == "from":
-            continue
-        msg[header] = default_headers[header]
+    default_headers = {
+        h.lower(): default_headers[h]
+        for h in default_headers or {}
+        if h.strip()
+    }
+    default_headers['from'] = sender
+    default_headers['to'] = to or default_headers['to']
+    headers = list(default_headers)
+    presets = ['from', 'to']
+    for val in presets:
+        headers.remove(val)
+    for header in presets + headers:
+        msg[header.title()] = default_headers[header]
     with tempfile.NamedTemporaryFile() as email_file:
         email_file.write(msg.as_bytes(policy=POLICY))
         email_file.flush()
@@ -331,21 +337,28 @@ class MsgPrompt(Cmd):
             if recipients:
                 recipients += "\n"
             recipients += f"Bcc: {', '.join(to)}"
-        lines = (
-            self.msg.get_body(preferencelist=("related", "plain", "html"))
-            .get_content()
-            .split("\n")
-        )
+        try:
+            lines = (
+                self.msg.get_body(preferencelist=("related", "plain", "html"))
+                .get_content()
+                .split("\n")
+            )
+        except AttributeError:
+            lines =  list(f'- {part.get_content_type()}' for part in self.msg.walk())
+            if not lines:
+                lines.append('\tNo parts')
+            lines.insert(0, "No message body. Parts:")
         if len(lines) > 20:
             lines = lines[:19] + ["... truncated"]
         body = "\n".join(lines)
         print(
-            f"""
+            f"""\
 From: {self.msg["From"]}
 Date: {self.msg.date}
 {recipients or 'No recipients headers found???'}
 Subject: {' '.join(self.msg.subject.split(chr(10)))}
             """.strip()
+            + '\n\n'
             + body
         )
 
@@ -522,6 +535,7 @@ class CliMail(Cmd):
         self.mailbox = mailbox
         self.editor = config["EDITOR"]
         self.sender = config.get("DEFAULT_FROM", getuser())
+        self.address_book = config.get("ADDRESS_BOOK", {})
 
     @property
     def prompt(self):
@@ -532,6 +546,9 @@ class CliMail(Cmd):
 
     def complete_edit(self, text, line, begidx, endidx):
         return [p.name for p in self.mailbox.curpath.glob(text + "*")]
+
+    def complete_compose(self, text, line, begidx, endidx):
+        return [self.address_book[alias] for alias in self.address_book if alias.lower().startswith(text.lower()) or text.lower() in self.address_book[alias].lower()]
 
     def finish(self, msg):
         print(msg)
@@ -719,6 +736,7 @@ class CliMail(Cmd):
 
     do_q = do_quit
     do_c = do_compose
+    complete_c = complete_compose
 
 
 class WeMaildir:

@@ -7,6 +7,24 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.11] - 2019-06-06
+
+### Added
+
+- compose now has an address book autocomplete function, using `ADDRESS_BOOK`
+  in the config file.
+
+### Fixed
+
+- For messages without any kind of body, now show a list of message parts, if
+  any.
+
+### Changed
+
+- Added spacer line between header and body.
+
+## [0.1.10] - 2019-06-05
+
 ### Added
 
 - Email forwarding.

@@ -7,7 +7,29 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+### Added
+
+- Email forwarding.
+- `r` shortcut for reply.
+- Ability to save and resume drafts, queue messages for later sending, and edit
+  files generally.
+- README for pypi and GitHub.
+
+### Fixed
+
+- On failure to send, display failure message instead of crash.
+- Properly display recipient headers when doing `proc`.
+
+### Changed
+
+- Default to `mistletoe` for the CommonMark renderer, because tables are
+  cooler. But fallback to commonmark, if available.
+- Show message body (up to 20 lines) when doing `proc`.
+
+
 ## [0.1.9]
+
+### Changed
 
 - Fix `~`-prefixed maildir paths.
 

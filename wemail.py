@@ -1,5 +1,7 @@
+import io
 import json
 import os
+import re
 import smtplib
 import subprocess
 import sys
@@ -7,6 +9,7 @@ import tempfile
 import time
 
 from cmd import Cmd
+from datetime import datetime
 from email.header import decode_header
 from email.message import EmailMessage
 from email.mime.multipart import MIMEMultipart
@@ -15,18 +18,25 @@ from email.parser import BytesParser
 from email.policy import EmailPolicy
 from email.utils import getaddresses, formatdate, parsedate_to_datetime
 from email.utils import parsedate_to_datetime
+from getpass import getuser
 from itertools import chain
 from pathlib import Path
 from textwrap import dedent
 
 try:
-    from commonmark import commonmark
+    from mistletoe import markdown as commonmark
 except ImportError:
-    commonmark = None
+    try:
+        from commonmark import commonmark
 
-__version__ = "0.1.9"
+        print("Got commonmark")
+    except ImportError:
+        commonmark = None
+
+__version__ = "0.1.10"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
+_parser = BytesParser(_class=EmailMessage, policy=POLICY)
 
 
 class WEmailError(Exception):
@@ -37,6 +47,87 @@ class WEmailMissingCommonmark(WEmailError):
     pass
 
 
+class WEmailDeliveryError(WEmailError):
+    pass
+
+
+def prettynow():
+    """
+    Return current time as YYYYMMDDHHMMSS
+    """
+    return datetime.now().strftime("%Y%m%d%H%M%S")
+
+
+def decode_subject(raw_subject):
+    subject = ""
+    for part in decode_header(raw_subject):
+        data, encoding = part
+        if encoding is None:
+            try:
+                subject += data
+            except TypeError:
+                subject += data.decode()
+        else:
+            subject += data.decode(encoding)
+    return subject
+
+
+def subjectify(*, msg):
+    """
+    Return the ``msg``'s subject, with just letters and numbers separated
+    by hyphens.
+    """
+    subject = decode_subject(msg.get("Subject", ""))
+    subject = re.sub("[^a-zA-Z0-9]+", "-", subject)
+    return subject
+
+
+def get_headers(*, mailfile):
+    """
+    Return the headers from an email file.
+    """
+    headfile = io.BytesIO()
+    with mailfile.open("rb") as f:
+        for line in f:
+            if line == b"\n":  # found the newline
+                break
+            else:
+                headfile.write(line)
+    headfile.write(b"\n\n")
+    headfile.seek(0)
+    return _parser.parse(headfile)
+
+
+def compose(*, editor, sender, to, default_headers=None):
+    msg = EmailMessage(policy=POLICY)
+    msg["From"] = sender
+    # msg["To"] = to
+    default_headers = default_headers or {}
+    for header in default_headers:
+        if header.lower() == "from":
+            continue
+        msg[header] = default_headers[header]
+    with tempfile.NamedTemporaryFile() as email_file:
+        email_file.write(msg.as_bytes(policy=POLICY))
+        email_file.flush()
+        edit(editor=editor, filename=email_file)
+        email_file.seek(0)
+        msg = _parser.parse(email_file)
+    return msg
+
+
+def edit(*, editor, filename):
+    """
+    Edit the provided file or ``filename`` with the provided ``editor``,
+    and return the exit code.
+    """
+    try:
+        filename = filename.name
+    except AttributeError:
+        pass  # It's probably a real filename
+    return subprocess.call([editor, filename])
+
+
 def commonmarkdown(plain_msg):
     """
     CommonMark-ify the provided msg. Return a multipart email with
@@ -44,7 +135,7 @@ def commonmarkdown(plain_msg):
     """
     if commonmark is None:
         raise WEmailMissingCommonmark(
-            "Cannot CommonMarkdown message. {sys.executable -m pip install --user commonmark} and try again."
+            "Cannot CommonMarkdown message. {sys.executable -m pip install --user mistletoe} and try again."
         )
     html = commonmark(plain_msg.get_payload())
     msg = MIMEMultipart("alternative")
@@ -56,6 +147,15 @@ def commonmarkdown(plain_msg):
     msg.attach(MIMEText(plain_msg.get_payload()))
     msg.attach(MIMEText(html, "html"))
     return msg
+
+
+def pretty_recipients(msg):
+    if msg.get("to"):
+        yield "To: {}".format(", ".join(str(a) for a in msg["to"].addresses))
+    if msg.get("cc"):
+        yield "Cc: {}".format(", ".join(str(a) for a in msg["cc"].addresses))
+    if msg.get("Bcc"):
+        yield "Bcc: {}".format(", ".join(str(a) for a in msg["bcc"].addresses))
 
 
 def send_message(
@@ -81,9 +181,14 @@ def send_message(
         smtp.ehlo()
         if username or password:
             smtp.login(username, password)
-        smtp.send_message(
-            msg, from_addr=sender, to_addrs=[addr for _, addr in recipients]
-        )
+        try:
+            smtp.send_message(
+                msg, from_addr=sender, to_addrs=[addr for _, addr in recipients if addr]
+            )
+        except smtplib.SMTPDataError as e:
+            raise WEmailDeliveryError(
+                f"Failed to deliver {subjectify(msg=msg)!r} - {e.args[1].decode()!r}"
+            ) from e
 
 
 class MsgPrompt(Cmd):
@@ -219,18 +324,29 @@ class MsgPrompt(Cmd):
         if to:
             recipients += f"To: {', '.join(to)}"
         if cc:
+            if recipients:
+                recipients += "\n"
             recipients += f"Cc: {', '.join(to)}"
         if bcc:
+            if recipients:
+                recipients += "\n"
             recipients += f"Bcc: {', '.join(to)}"
+        lines = (
+            self.msg.get_body(preferencelist=("related", "plain", "html"))
+            .get_content()
+            .split("\n")
+        )
+        if len(lines) > 20:
+            lines = lines[:19] + ["... truncated"]
+        body = "\n".join(lines)
         print(
-            dedent(
-                f"""\
-        From: {self.msg["From"]}
-        Date: {self.msg.date}
-        {recipients or 'No recipients headers found???'}
-        Subject: {' '.join(self.msg.subject.split(chr(10)))}
-        """
-            )
+            f"""
+From: {self.msg["From"]}
+Date: {self.msg.date}
+{recipients or 'No recipients headers found???'}
+Subject: {' '.join(self.msg.subject.split(chr(10)))}
+            """.strip()
+            + body
         )
 
     def do_reply(self, line):
@@ -306,12 +422,96 @@ class MsgPrompt(Cmd):
             )
             print("Sent!")
 
+    def do_forward(self, line):
+        """
+        Forward email to recipient.
+        """
+        try:
+            from_addr = self.msg.get("From").addresses[0]
+            sender = from_addr.display_name or str(from_addr)
+        except IndexError:
+            sender = "Unknown"
+
+        try:
+            date = parsedate_to_datetime(self.msg["Date"])
+        except KeyError:
+            date = "a day in the past"
+        except TypeError:
+            date = self.msg["Date"]
+        else:
+            date = date.strftime("%a, %B %d, %Y").rstrip()
+
+        fwd_msg = MIMEText(
+            dedent(
+                f"""
+            ---------- Forwarded Message ----------
+            From: {self.msg.get("From")}
+            Date: {date}
+            Subject: {self.msg.subject}
+            """
+            )
+            + "\n".join(l for l in pretty_recipients(self.msg))
+            + "\n"
+            + self.msg.get_body(
+                preferencelist=("related", "plain", "html")
+            ).get_content()
+        )
+        fwd_msg["To"] = ", ".join(
+            str(a) for s in self.msg.get_all("From") for a in s.addresses
+        )
+        if line == "all":
+            fwd_msg["Cc"] = ", ".join(
+                str(a)
+                for s in chain(self.msg.get_all("Cc", []), self.msg.get_all("Bcc", []))
+                for a in s.addresses
+            )
+        # TODO: Figure out which one of our addresses this was sent to -W. Werner, 2019-05-23
+        addr = self.config.get("DEFAULT_FROM")
+        fwd_msg["Subject"] = f"Fwd: {self.msg.subject}"
+        for header in self.config[addr]["HEADERS"]:
+            if header.lower() != "subject":
+                fwd_msg[header] = self.config[addr]["HEADERS"][header]
+
+        with tempfile.NamedTemporaryFile(suffix=".eml") as f:
+            f.write(fwd_msg.as_bytes(policy=POLICY))
+            f.flush()
+            subprocess.call([self.config["EDITOR"], f.name])
+            f.seek(0)
+            fwd_msg = self.mailbox._parser.parse(f)
+
+        print("=" * 20)
+        print(str(fwd_msg))
+        print("=" * 20)
+        choice = input("Send message? [Y/n]:")
+        if choice.lower() not in ("n", "no"):
+            abort_time = self.config.get("ABORT_TIMEOUT")
+            while abort_time:
+                print(f"\rSending in {abort_time}s", end="")
+                sys.stdout.flush()
+                time.sleep(1)
+                abort_time -= 1
+            print("\rSending message...", end="")
+            sys.stdout.flush()
+            if fwd_msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
+                fwd_msg = commonmarkdown(fwd_msg)
+            send_message(
+                smtp_host=self.config[addr]["SMTP_HOST"],
+                smtp_port=self.config[addr]["SMTP_PORT"],
+                use_tls=self.config[addr].get("SMTP_USE_TLS"),
+                username=self.config[addr].get("SMTP_USERNAME"),
+                password=self.config[addr].get("SMTP_PASSWORD"),
+                msg=fwd_msg,
+            )
+            print("Sent!")
+
     # Aliases
     do_d = do_del = do_delete
     do_h = do_header
     do_p = do_parts
     do_q = do_quit
     do_s = do_m = do_move = do_save
+    do_r = do_reply
+    do_f = do_forward
     complete_s = complete_m = complete_move = complete_save
 
 
@@ -321,17 +521,57 @@ class CliMail(Cmd):
         self.config = config
         self.mailbox = mailbox
         self.editor = config["EDITOR"]
+        self.sender = config.get("DEFAULT_FROM", getuser())
 
     @property
     def prompt(self):
         return f"WEmail - {self.mailbox.msg_count} {self.mailbox.curpath.name}> "
 
-    def edit(self, filename):
-        try:
-            filename = filename.name
-        except AttributeError:
-            pass  # It's probably a real filename
-        subprocess.call([self.editor, filename])
+    def complete_cd(self, text, line, begidx, endidx):
+        return [p.name for p in self.mailbox.path.glob(text + "*")]
+
+    def complete_edit(self, text, line, begidx, endidx):
+        return [p.name for p in self.mailbox.curpath.glob(text + "*")]
+
+    def finish(self, msg):
+        print(msg)
+        if msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
+            msg = commonmarkdown(msg)
+        print("=" * 80)
+        print("Finished composing")
+        choice = input("[s]end now, [q]ueue, sa[v]e draft, [d]iscard? ").lower().strip()
+        if choice == "v":
+            draftname = self.mailbox.save_draft(msg=msg)
+            print(f"Draft saved as {draftname}")
+        elif choice == "s":
+            name = self.mailbox.queue_for_delivery(msg)
+            count = len(self.mailbox.outbox)
+            if count < 2:
+                print(f'Sending {msg["Subject"]!r}...', end="")
+                sys.stdout.flush()
+                self.mailbox.send_one(send_func=send_message, name=name)
+                print("OK!")
+            else:
+                sendall = input(
+                    f"{count} emails to send. Send all now? [Y/n]: "
+                ).lower()
+                if sendall in ("y", "yes"):
+                    return self.do_sendall("")
+                else:
+                    print(f'Okay, just sending {msg["Subject"]}...', end="")
+                    sys.stdout.flush()
+                    self.mailbox.send_one(send_func=send_message, name=name)
+                    print("OK!")
+        elif choice == "q":
+            name = self.mailbox.queue_for_delivery(msg)
+            print(f"Message {name} queued for delivery")
+        elif choice == "d":
+            confirm = input("Really discard? [y/N]:").lower()
+            if confirm == "y":
+                print("Email discarded")
+            else:
+                draftname = self.mailbox.save_draft(msg=msg)
+                print(f"Excellent! Draft saved as {draftname}")
 
     def do_quit(self, line):
         print("Okay bye!")
@@ -340,9 +580,6 @@ class CliMail(Cmd):
     def do_EOF(self, line):
         print()
         return self.do_quit(line)
-
-    def complete_cd(self, text, line, begidx, endidx):
-        return [p.name for p in self.mailbox.path.glob(text + "*")]
 
     def do_cd(self, line):
         line = line.lstrip(".")
@@ -355,49 +592,93 @@ class CliMail(Cmd):
         else:
             self.mailbox.curpath = self.mailbox._curpath
 
+    def do_edit(self, line):
+        """
+        Edit the file in the current directory.
+        """
+        file = self.mailbox.curpath / line
+        edit(editor=self.editor, filename=str(file))
+
+    def do_sendall(self, line):
+        """
+        Send all outgoing email now.
+        """
+        count = len(self.mailbox.outbox)
+        if not count:
+            print("No mail to send")
+        else:
+            print(f"Excellent! Sending {count} messages...")
+            for status_code, subject, path in self.mailbox.send_all(
+                send_func=send_message
+            ):
+                if status_code == 200:
+                    print(f"Sent {subject!r}")
+                else:
+                    print(f"Failed to send. {subject} - {path}")
+            print("Done!")
+
+    def do_resume(self, line):
+        """
+        Resume editing a draft email.
+        """
+        count = len(self.mailbox.drafts)
+        for i, mailfile in enumerate(self.mailbox.drafts, start=1):
+            headers = get_headers(mailfile=mailfile)
+            sender = headers["From"]
+            subject = headers["Subject"]
+            print(f"{i:>2}. {sender} - {subject}")
+        valid = False
+        while not valid:
+            try:
+                if line:
+                    choice = line
+                    line = None
+                else:
+                    choice = input(f"Resume which draft? [1-{count}]: ")
+                choice = int(choice)
+            except KeyboardInterrupt:
+                print("\nCancelled!")
+                return
+            except ValueError:
+                if choice.lower() in ("q", "quit", "c", "cancel"):
+                    return
+            if isinstance(choice, int) and 1 <= choice <= count:
+                valid = True
+                choice = choice - 1
+            else:
+                print(f"{choice!r} is not a valid choice")
+        print("Editing draft...")
+        draftname = self.mailbox.drafts[choice]
+        edit(editor=self.config["EDITOR"], filename=str(draftname.resolve()))
+        with draftname.open("rb") as draft:
+            msg = _parser.parse(draft)
+        draftname.unlink()
+        self.finish(msg)
+
     def do_compose(self, line):
         """
         Compose a new email message using the default or optional role.
         """
-        from_addr = self.config.get(line, self.config.get("DEFAULT_FROM"))
-        msg = MIMEText("")
-        msg["To"] = ""
-        for header in self.config[from_addr]["HEADERS"]:
-            msg[header] = self.config[from_addr]["HEADERS"][header]
-        self.mailbox.draftpath.mkdir(exist_ok=True, parents=True)
-        with tempfile.NamedTemporaryFile(
-            dir=self.mailbox.draftpath, suffix=".eml", delete=False
-        ) as f:
-            f.write(msg.as_bytes(policy=POLICY))
-            f.flush()
-            self.edit(f)
-            f.seek(0)
-        with open(f.name, "rb") as f:
-            msg = self.mailbox._parser.parse(f)
-            print(msg)
-            if msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
-                msg = commonmarkdown(msg)
-        choice = input("Send email? [Y/n]:")
-        if choice.lower() in ("n", "no"):
-            print(f"Draft saved as {f.name}")
+
+        count = len(self.mailbox.drafts)
+        if count:
+            s = "" if count == 1 else "s"
+            resume = input(f"{count} draft{s}, resume? [y/N]").lower()
+            if resume in ("y", "yes"):
+                do_resume("")
         else:
-            print("Sending message...", end="")
-            sys.stdout.flush()
-            send_message(
-                smtp_host=self.config[from_addr]["SMTP_HOST"],
-                smtp_port=self.config[from_addr]["SMTP_PORT"],
-                use_tls=self.config[from_addr].get("SMTP_USE_TLS"),
-                username=self.config[from_addr].get("SMTP_USERNAME"),
-                password=self.config[from_addr].get("SMTP_PASSWORD"),
-                msg=msg,
+            msg = compose(
+                editor=self.config["EDITOR"],
+                sender=self.sender,
+                to=line,
+                default_headers=self.config[self.sender].get("HEADERS"),
             )
-            Path(f.name).unlink()
-            print(" Sent!")
+            self.finish(msg)
 
     def do_ls(self, line):
         if not line.strip():
             for msg in self.mailbox:
-                print(msg.date, msg["From"])
+                print(f'{msg.path} - {msg.date} - {msg["From"]}')
 
     def do_proc(self, line):
         """
@@ -446,6 +727,9 @@ class WeMaildir:
         self.path = Path(config["MAILDIR"])
         self.curpath = self._curpath
         self._parser = BytesParser(_class=EmailMessage, policy=POLICY)
+        paths = (self._newpath, self._curpath, self.queuepath, self.sentpath)
+        for path in paths:
+            path.mkdir(exist_ok=True, parents=True)
 
     def __iter__(self):
         for file in reversed(sorted(list(self.curpath.iterdir()))):
@@ -455,21 +739,18 @@ class WeMaildir:
         mailfile = self.curpath / key
         with mailfile.open("rb") as f:
             msg = self._parser.parse(f)
+            msg.path = mailfile
             msg.key = f.name
             msg.date = None
             if msg["Date"]:
                 msg.date = parsedate_to_datetime(msg["Date"])
             subject = ""
-            for part in decode_header(msg["subject"]):
-                data, encoding = part
-                if encoding is None:
-                    try:
-                        subject += data
-                    except TypeError:
-                        subject += data.decode()
-                else:
-                    subject += data.decode(encoding)
-            msg.subject = subject
+            msg.subject = decode_subject(msg["subject"])
+            msg.recipients = list(
+                chain(
+                    msg.get_all("To", []), msg.get_all("Cc", []), msg.get_all("Bcc", [])
+                )
+            )
             return msg
 
     @property
@@ -485,12 +766,73 @@ class WeMaildir:
         return self.path / "draft"
 
     @property
+    def queuepath(self):
+        return self.path / "outbox"
+
+    @property
+    def sentpath(self):
+        return self.path / "sent"
+
+    @property
     def msg_count(self):
         return sum(1 for _ in self.curpath.iterdir())
 
     @property
     def has_new(self):
         return any(self._newpath.iterdir())
+
+    @property
+    def outbox(self):
+        return list(self.queuepath.iterdir())
+
+    @property
+    def drafts(self):
+        return list(self.draftpath.iterdir())
+
+    def send_all(self, *, send_func):
+        for mail in self.outbox:
+            try:
+                yield self.send_one(send_func=send_func, name=mail.name)
+            except WEmailDeliveryError as e:
+                yield 400, str(e), str(mail.resolve())
+
+    def send_one(self, *, send_func, name):
+        mail = self.queuepath / name
+        with mail.open("rb") as f:
+            msg = self._parser.parse(f)
+            sender = msg["From"]
+            try:
+                send_func(
+                    smtp_host=self.config[sender]["SMTP_HOST"],
+                    smtp_port=self.config[sender]["SMTP_PORT"],
+                    use_tls=self.config[sender].get("SMTP_USE_TLS"),
+                    username=self.config[sender].get("SMTP_USERNAME"),
+                    password=self.config[sender].get("SMTP_PASSWORD"),
+                    msg=msg,
+                )
+            except:
+                raise
+            else:
+                sentname = self.sentpath / mail.name
+                mail.rename(sentname)
+                return 200, msg["Subject"], sentname
+
+    def save_draft(self, *, msg, filename=None):
+        name = filename or f"{prettynow()}-{subjectify(msg=msg)}"
+        count = 0
+        exists = True
+        while exists:
+            file = self.draftpath / (name + f'{count or ""}.eml')
+            exists = file.exists()
+        file.write_bytes(msg.as_bytes(policy=POLICY))
+        return str(file.resolve())
+
+    def queue_for_delivery(self, msg):
+        with tempfile.NamedTemporaryFile(
+            dir=self.queuepath, delete=False, suffix=".eml"
+        ) as f:
+            f.write(msg.as_bytes(policy=POLICY))
+        return f.name
 
     def check_new(self):
         """

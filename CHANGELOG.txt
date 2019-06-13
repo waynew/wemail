@@ -5,6 +5,15 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Resuming draft works properly.
+
+### Changed
+
+- Temp file when composing now has `.eml` suffix, to trigger email-like
+  behaviors in editors that honor that kind of thing.
+
 ---
 
 ## [0.1.11] - 2019-06-06

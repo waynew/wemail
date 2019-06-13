@@ -113,7 +113,7 @@ def compose(*, editor, sender, to, default_headers=None):
         headers.remove(val)
     for header in presets + headers:
         msg[header.title()] = default_headers[header]
-    with tempfile.NamedTemporaryFile() as email_file:
+    with tempfile.NamedTemporaryFile(suffix=".eml") as email_file:
         email_file.write(msg.as_bytes(policy=POLICY))
         email_file.flush()
         edit(editor=editor, filename=email_file)
@@ -682,7 +682,7 @@ class CliMail(Cmd):
             s = "" if count == 1 else "s"
             resume = input(f"{count} draft{s}, resume? [y/N]").lower()
             if resume in ("y", "yes"):
-                do_resume("")
+                self.do_resume("")
         else:
             msg = compose(
                 editor=self.config["EDITOR"],

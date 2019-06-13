@@ -1,5 +1,7 @@
+import ast
 import io
 import json
+import mimetypes
 import os
 import re
 import smtplib
@@ -12,6 +14,9 @@ from cmd import Cmd
 from datetime import datetime
 from email.header import decode_header
 from email.message import EmailMessage
+from email.mime.application import MIMEApplication
+from email.mime.audio import MIMEAudio
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.parser import BytesParser
@@ -98,7 +103,7 @@ def get_headers(*, mailfile):
     return _parser.parse(headfile)
 
 
-def compose(*, editor, sender, to, default_headers=None):
+def compose(*, draft_dir, editor, sender, to, default_headers=None):
     msg = EmailMessage(policy=POLICY)
     default_headers = {
         h.lower(): default_headers[h]
@@ -113,6 +118,17 @@ def compose(*, editor, sender, to, default_headers=None):
         headers.remove(val)
     for header in presets + headers:
         msg[header.title()] = default_headers[header]
+    # TODO: Rewrite this compose process. It should probably be a context manager -W. Werner, 2019-06-13
+    # The current problem is that if things crash, we're out of luck, the
+    # message is lost. We don't want that. So we need to change this so that
+    # when a message is composed, we can try to do things with the resulting
+    # message, but if something unexpected happens we /should not lose that message/!!!
+    #
+    # I think it should look like this:
+    # with compose(...) as msg:
+    #    ...
+    #    send/save/discard/queue
+    #
     with tempfile.NamedTemporaryFile(suffix=".eml") as email_file:
         email_file.write(msg.as_bytes(policy=POLICY))
         email_file.flush()
@@ -153,6 +169,58 @@ def commonmarkdown(plain_msg):
     msg.attach(MIMEText(plain_msg.get_payload()))
     msg.attach(MIMEText(html, "html"))
     return msg
+
+
+def attachify(msg):
+    '''
+    Seek for attachment headers. If any exist, attach files. If ``; name=``
+    is present in the header, use that name. Otherwise, use the original
+    filename. Paths will be relative to the current directory, unless
+    they're absolute.
+
+    ``; inline=true`` must be set to inline the attachment.
+
+    If attachment filename does not exist, raise WEmailAttachmentNotFound.
+    '''
+    related_msg = _parser.parsebytes(msg.as_bytes())
+    related_msg.make_mixed()
+    related_msg.preamble = "This is a MIME-formatted multi-part message."
+    attachments = related_msg.get_all('Attachment')
+
+    if attachments is None:
+        return msg
+    del related_msg['Attachment']
+
+    attachment_ids = set()
+    for attachment in attachments:
+        filename, *extra = attachment.split(';')
+        filename = Path(filename).resolve()
+        name = filename.name
+        type_, encoding = mimetypes.guess_type(filename.name)
+        disposition = 'attachment'
+        for bit in extra:
+            key, _, val = bit.strip().partition('=')
+            key = key.strip()
+            val = val.strip()
+            if key.lower() == 'inline' and val.lower() == 'true':
+                disposition = 'inline'
+            elif key.lower() in ('name', 'filename'):
+                name = ast.literal_eval(val)
+        if type_ is None or type_.startswith('application/'):
+            part = MIMEApplication(filename.read_bytes(), policy=POLICY, name=name)
+        elif type_.startswith('text/'):
+            part = MIMEText(filename.read_text(), policy=POLICY)
+        elif type_.startswith('audio/'):
+            part = MIMEAudio(filename.read_bytes(), policy=POLICY, name=name)
+        elif type_.startswith('image/'):
+            part = MIMEImage(filename.read_bytes(), policy=POLICY, name=name)
+        part.add_header('Content-Disposition', disposition, filename=name)
+        part.add_header('Content-ID', f'<{name}>')
+        part.add_header('X-Attachment-Id', name)
+        related_msg.attach(part)
+    print(related_msg)
+    return related_msg
+
 
 
 def pretty_recipients(msg):
@@ -687,15 +755,15 @@ class CliMail(Cmd):
             s = "" if count == 1 else "s"
             resume = input(f"{count} draft{s}, resume? [y/N]").lower()
             if resume in ("y", "yes"):
-                self.do_resume("")
-        else:
-            msg = compose(
-                editor=self.config["EDITOR"],
-                sender=self.sender,
-                to=line,
-                default_headers=self.config[self.sender].get("HEADERS"),
-            )
-            self.finish(msg)
+                return self.do_resume("")
+        msg = compose(
+            draft_dir=self.mailbox.draftpath,
+            editor=self.config["EDITOR"],
+            sender=self.sender,
+            to=line,
+            default_headers=self.config[self.sender].get("HEADERS"),
+        )
+        self.finish(msg)
 
     def do_ls(self, line):
         if not line.strip():

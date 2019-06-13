@@ -8,6 +8,17 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - Uses linux escape sequences to (try) and set the terminal title.
+- Can now add attachments! Simply add `Attachment: /path/to/file` in the
+  headers and they will be replaced by the appropriate attachments. Images
+  can be inlined to CommonMarked email via something like so:
+
+      Attachment: /path/to/image.png; inline=true; name="example.png"
+
+      Hey, here is an inline image:
+      ![Alt text](cid:example.png)
+
+  The only important thing is that `cid:<this part>` matches whatever is in the
+  `name="<this part>"`.
 
 ### Fixed
 

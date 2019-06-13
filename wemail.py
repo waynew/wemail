@@ -552,14 +552,16 @@ class CliMail(Cmd):
         return [self.address_book[alias] for alias in self.address_book if alias.lower().startswith(text.lower()) or text.lower() in self.address_book[alias].lower()]
 
     def finish(self, msg):
+        raw_msg = msg
         print(msg)
         if msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
             msg = commonmarkdown(msg)
+        msg = attachify(msg)
         print("=" * 80)
         print("Finished composing")
         choice = input("[s]end now, [q]ueue, sa[v]e draft, [d]iscard? ").lower().strip()
         if choice == "v":
-            draftname = self.mailbox.save_draft(msg=msg)
+            draftname = self.mailbox.save_draft(msg=raw_msg)
             print(f"Draft saved as {draftname}")
         elif choice == "s":
             name = self.mailbox.queue_for_delivery(msg)

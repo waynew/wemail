@@ -20,6 +20,7 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Temp file when composing now has `.eml` suffix, to trigger email-like
   behaviors in editors that honor that kind of thing.
+- Save raw message as draft after compose, rather than rendered.
 
 ---
 

@@ -145,7 +145,7 @@ def commonmarkdown(plain_msg):
         )
     html = commonmark(plain_msg.get_payload())
     msg = MIMEMultipart("alternative")
-    for key in plain_msg.keys():
+    for key in set(key.lower() for key in plain_msg.keys()):
         for val in plain_msg.get_all(key):
             if key.lower() == "x-commonmark":
                 continue

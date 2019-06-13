@@ -652,7 +652,9 @@ class CliMail(Cmd):
                     choice = line
                     line = None
                 else:
-                    choice = input(f"Resume which draft? [1-{count}]: ")
+                    if count > 1:
+                        choice = input(f"Resume which draft? [1-{count}]: ")
+                    choice = 1
                 choice = int(choice)
             except KeyboardInterrupt:
                 print("\nCancelled!")

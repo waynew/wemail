@@ -5,6 +5,10 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Uses linux escape sequences to (try) and set the terminal title.
+
 ### Fixed
 
 - Resuming draft works properly.

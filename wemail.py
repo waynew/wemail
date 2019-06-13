@@ -530,6 +530,7 @@ Subject: {' '.join(self.msg.subject.split(chr(10)))}
 
 class CliMail(Cmd):
     def __init__(self, mailbox, config):
+        print(']0;wemail', end='\a', flush=True)
         super().__init__()
         self.config = config
         self.mailbox = mailbox

@@ -343,7 +343,7 @@ class MsgPrompt(Cmd):
                 .get_content()
                 .split("\n")
             )
-        except AttributeError:
+        except (AttributeError, KeyError):
             lines =  list(f'- {part.get_content_type()}' for part in self.msg.walk())
             if not lines:
                 lines.append('\tNo parts')

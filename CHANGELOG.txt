@@ -14,6 +14,7 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Resuming draft works properly.
 - With only one draft, resuming no longer asks a second time.
 - No longer multiply headers.
+- Display failed body seek on KeyError, instead of crash.
 
 ### Changed
 

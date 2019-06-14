@@ -5,11 +5,18 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.1.14] - 2019-06-18
+
+### Fixed
+
+- Forwarding and replying now both allow attachments and CommonMark rendering.
+
 ### Changed
 
 - Message now prints when you're up to date.
-
----
+- From address tries to default to ones found in config.
 
 ## [0.1.13] - 2019-06-18
 

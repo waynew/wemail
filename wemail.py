@@ -21,8 +21,13 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.parser import BytesParser
 from email.policy import EmailPolicy
-from email.utils import getaddresses, formatdate, parsedate_to_datetime
-from email.utils import parsedate_to_datetime
+from email.utils import (
+    getaddresses,
+    formatdate,
+    parsedate_to_datetime,
+    formataddr,
+    parseaddr,
+)
 from getpass import getuser
 from itertools import chain
 from pathlib import Path
@@ -30,7 +35,7 @@ from textwrap import dedent
 
 try:
     from mistletoe import markdown as commonmark
-except ImportError:
+except ImportError as e:
     try:
         from commonmark import commonmark
 
@@ -38,10 +43,12 @@ except ImportError:
     except ImportError:
         commonmark = None
 
-__version__ = "0.1.13"
+__version__ = "0.1.14"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
+SKIPPED_HEADERS = ("To", "Cc", "DKIM-Signature", "Message-ID", "Subject")
+DEFAULT_HEADERS = {"From": "", "To": "", "Subject": ""}
 
 
 class WEmailError(Exception):
@@ -54,6 +61,110 @@ class WEmailMissingCommonmark(WEmailError):
 
 class WEmailDeliveryError(WEmailError):
     pass
+
+
+class Message:
+    def __init__(self, *, config=None, draftdir=None, headers=None):
+        config = config or {}
+        draftdir = draftdir or config.get("draftdir", ".")
+        self.filename = Path(draftdir, f"{prettynow()}-new.eml")
+        self.config = config
+        self._cleanup = True
+        self._headers = headers or {}
+
+    def __enter__(self):
+        self.filename.touch()
+        msg = EmailMessage(policy=POLICY)
+        for header in self._headers:
+            msg[header] = self._headers[header]
+        self.filename.write_bytes(msg.as_bytes())
+        return self
+
+    def __exit__(self, type, value, traceback):
+        if traceback is None and self._cleanup:
+            self.filename.unlink()
+
+    @property
+    def msg(self):
+        with self.filename.open(mode="rb") as f:
+            return _parser.parse(f)
+
+    def save(self, *, filename=None):
+        self._cleanup = False
+        if filename:
+            self.filename.rename(filename)
+
+    def send(self, smtp):
+        ...
+
+
+def action_prompt():
+    choice = input("[s]end now, [q]ueue, sa[v]e draft, [d]iscard? ").lower().strip()
+    if choice not in ("s", "q", "v", "d"):
+        print(f"{choice!r} not a valid input.")
+        return action_prompt()
+    return choice
+
+
+def take_action(*, mailbox, original_msg, editor, abort_timeout, draftdir):
+    with Message(draftdir=draftdir) as draft:
+        draft.filename.write_bytes(original_msg.as_bytes())
+        edit(editor=editor, filename=draft.filename)
+        draft.filename.write_bytes(attachify(commonmarkdown(draft.msg)).as_bytes())
+        draftname = str(draft.filename)
+
+        choice = action_prompt()
+        if choice == "v":
+            draft.save()
+            print(f"Draft saved as {draftname}")
+        elif choice == "q":
+            name = mailbox.queue_for_delivery(draft.msg)
+            print(f"Message {name} queued for delivery")
+        elif choice == "d":
+            confirm = input("Really discard? [y/N]:").lower()
+            if confirm == "y":
+                print("Email discarded")
+            else:
+                draft.save()
+                print(f"Excellent! Draft saved as {draftname}")
+        elif choice == "s":
+            name = mailbox.queue_for_delivery(draft.msg)
+            count = len(mailbox.outbox)
+            if count < 2:
+                abort_time = abort_timeout
+                while abort_time:
+                    print(f"\rSending in {abort_time}s - ^C to cancel...", end="")
+                    sys.stdout.flush()
+                    time.sleep(1)
+                    abort_time -= 1
+                print()
+                print(f'Sending {draft.msg["Subject"]!r}...', end="")
+                sys.stdout.flush()
+                mailbox.send_one(send_func=send_message, name=name)
+                print("OK!")
+            else:
+                sendall = input(
+                    f"{count} emails to send. Send all now? [Y/n]: "
+                ).lower()
+                if sendall in ("y", "yes"):
+                    count = len(mailbox.outbox)
+                    if not count:
+                        print("No mail to send")
+                    else:
+                        print(f"Excellent! Sending {count} messages...")
+                        for status_code, subject, path in mailbox.send_all(
+                            send_func=send_message
+                        ):
+                            if status_code == 200:
+                                print(f"Sent {subject!r}")
+                            else:
+                                print(f"Failed to send. {subject} - {path}")
+                    print("Done!")
+                else:
+                    print(f'Okay, just sending {draft.msg["Subject"]}...', end="")
+                    sys.stdout.flush()
+                    mailbox.send_one(send_func=send_message, name=name)
+                    print("OK!")
 
 
 def prettynow():
@@ -106,14 +217,12 @@ def get_headers(*, mailfile):
 def compose(*, draft_dir, editor, sender, to, default_headers=None):
     msg = EmailMessage(policy=POLICY)
     default_headers = {
-        h.lower(): default_headers[h]
-        for h in default_headers or {}
-        if h.strip()
+        h.lower(): default_headers[h] for h in default_headers or {} if h.strip()
     }
-    default_headers['from'] = sender
-    default_headers['to'] = to or default_headers['to']
+    default_headers["from"] = sender
+    default_headers["to"] = to or default_headers["to"]
     headers = list(default_headers)
-    presets = ['from', 'to']
+    presets = ["from", "to"]
     for val in presets:
         headers.remove(val)
     for header in presets + headers:
@@ -132,7 +241,7 @@ def compose(*, draft_dir, editor, sender, to, default_headers=None):
     with tempfile.NamedTemporaryFile(suffix=".eml") as email_file:
         email_file.write(msg.as_bytes(policy=POLICY))
         email_file.flush()
-        edit(editor=editor, filename=email_file)
+        edit(editor=editor, filename=email_file.name)
         email_file.seek(0)
         msg = _parser.parse(email_file)
     return msg
@@ -144,7 +253,7 @@ def edit(*, editor, filename):
     and return the exit code.
     """
     try:
-        filename = filename.name
+        filename = str(filename.resolve())
     except AttributeError:
         pass  # It's probably a real filename
     return subprocess.call([editor, filename])
@@ -155,24 +264,19 @@ def commonmarkdown(plain_msg):
     CommonMark-ify the provided msg. Return a multipart email with
     both text and HTML parts.
     """
-    if commonmark is None:
-        raise WEmailMissingCommonmark(
-            "Cannot CommonMarkdown message. {sys.executable -m pip install --user mistletoe} and try again."
-        )
-    html = commonmark(plain_msg.get_payload())
-    msg = MIMEMultipart("alternative")
-    for key in set(key.lower() for key in plain_msg.keys()):
-        for val in plain_msg.get_all(key):
-            if key.lower() == "x-commonmark":
-                continue
-            msg[key] = val
-    msg.attach(MIMEText(plain_msg.get_payload()))
-    msg.attach(MIMEText(html, "html"))
+
+    if "X-CommonMark" not in plain_msg:
+        return plain_msg
+    msg = _parser.parsebytes(plain_msg.as_bytes())
+    del msg["X-CommonMark"]
+
+    msg.make_alternative()
+    msg.add_alternative(commonmark(plain_msg.get_payload()), subtype="html")
     return msg
 
 
 def attachify(msg):
-    '''
+    """
     Seek for attachment headers. If any exist, attach files. If ``; name=``
     is present in the header, use that name. Otherwise, use the original
     filename. Paths will be relative to the current directory, unless
@@ -181,46 +285,145 @@ def attachify(msg):
     ``; inline=true`` must be set to inline the attachment.
 
     If attachment filename does not exist, raise WEmailAttachmentNotFound.
-    '''
+    """
     related_msg = _parser.parsebytes(msg.as_bytes())
     related_msg.make_mixed()
     related_msg.preamble = "This is a MIME-formatted multi-part message."
-    attachments = related_msg.get_all('Attachment')
+    attachments = related_msg.get_all("Attachment")
 
     if attachments is None:
         return msg
-    del related_msg['Attachment']
+    del related_msg["Attachment"]
 
     attachment_ids = set()
     for attachment in attachments:
-        filename, *extra = attachment.split(';')
+        filename, *extra = attachment.split(";")
         filename = Path(filename).resolve()
         name = filename.name
         type_, encoding = mimetypes.guess_type(filename.name)
-        disposition = 'attachment'
+        disposition = "attachment"
         for bit in extra:
-            key, _, val = bit.strip().partition('=')
+            key, _, val = bit.strip().partition("=")
             key = key.strip()
             val = val.strip()
-            if key.lower() == 'inline' and val.lower() == 'true':
-                disposition = 'inline'
-            elif key.lower() in ('name', 'filename'):
+            if key.lower() == "inline" and val.lower() == "true":
+                disposition = "inline"
+            elif key.lower() in ("name", "filename"):
                 name = ast.literal_eval(val)
-        if type_ is None or type_.startswith('application/'):
+        if type_ is None or type_.startswith("application/"):
             part = MIMEApplication(filename.read_bytes(), policy=POLICY, name=name)
-        elif type_.startswith('text/'):
+        elif type_.startswith("text/"):
             part = MIMEText(filename.read_text(), policy=POLICY)
-        elif type_.startswith('audio/'):
+        elif type_.startswith("audio/"):
             part = MIMEAudio(filename.read_bytes(), policy=POLICY, name=name)
-        elif type_.startswith('image/'):
+        elif type_.startswith("image/"):
             part = MIMEImage(filename.read_bytes(), policy=POLICY, name=name)
-        part.add_header('Content-Disposition', disposition, filename=name)
-        part.add_header('Content-ID', f'<{name}>')
-        part.add_header('X-Attachment-Id', name)
+        part.add_header("Content-Disposition", disposition, filename=name)
+        part.add_header("Content-ID", f"<{name}>")
+        part.add_header("X-Attachment-Id", name)
         related_msg.attach(part)
-    print(related_msg)
     return related_msg
 
+
+def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
+    """
+    Take a msg and return a reply message. Default address is `Reply-To`,
+    followed by `From`. If `all_recipients` is ``True``, add every
+    recipient to the list(s) they were in.
+    """
+    if not keep_attachments:
+        reply = _parser.parsebytes(msg.get_body(("plain", "html")).as_bytes())
+    else:
+        reply = _parser.parsebytes(msg.as_bytes())
+
+    for field in SKIPPED_HEADERS:
+        try:
+            del reply[field]
+        except KeyError:
+            pass
+    if reply_all:
+        to_recipients = getaddresses(msg.get_all("From", []) + msg.get_all("To", []))
+        cc_recipients = getaddresses(msg.get_all("Cc", []))
+        reply["To"] = ", ".join(formataddr(addr) for addr in to_recipients)
+        reply["Cc"] = ", ".join(formataddr(addr) for addr in cc_recipients)
+    else:
+        for fromaddr in msg.get_all("Reply-To", msg.get_all("From", [])):
+            reply["To"] = fromaddr
+
+    try:
+        del reply["From"]
+    except KeyError:
+        # Replying when you don't have an original sender? That's weird
+        pass
+    finally:
+        reply["From"] = sender
+
+    try:
+        from_addr = msg.get("From").addresses[0]
+        msg_sender = from_addr.display_name or str(from_addr)
+    except IndexError:
+        msg_sender = "Unknown"
+
+    try:
+        date = parsedate_to_datetime(msg["Date"])
+    except KeyError:
+        date = "a day in the past"
+    except TypeError:
+        date = msg["Date"]
+    else:
+        date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
+
+    try:
+        body = reply.get_body().get_payload()
+    except AttributeError:
+        body = ""
+    reply.get_body().set_content(
+        f"On {date}, {msg_sender} wrote:\n> " + body.replace("\n", "\n> ")
+    )
+    reply["Subject"] = "Re: " + msg.get("subject", "")
+    return reply
+
+
+def forwardify(*, msg, sender, keep_attachments=False):
+    if not keep_attachments:
+        fwd_msg = _parser.parsebytes(msg.get_body(("plain", "html")).as_bytes())
+    else:
+        fwd_msg = _parser.parsebytes(msg.as_bytes())
+
+    for header in SKIPPED_HEADERS:
+        try:
+            del fwd_msg[header]
+        except KeyError:
+            pass
+    try:
+        date = parsedate_to_datetime(msg["Date"])
+    except KeyError:
+        date = "a day in the past"
+    except TypeError:
+        date = msg["Date"]
+    else:
+        date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
+    try:
+        del fwd_msg["From"]
+    except KeyError:
+        pass  # How are you forwarding an email that came from nobody?
+    fwd_msg["From"] = sender
+    fwd_msg["To"] = ""
+    fwd_msg["Subject"] = "Fwd: " + msg.get("Subject", "")
+    fwd_msg.get_body(("plain", "html")).set_content(
+        dedent(
+            f"""
+        ---------- Forwarded Message ----------
+        From: {msg.get("From")}
+        Date: {date}
+        Subject: {msg.get('Subject')}
+        """
+        )
+        + "\n".join(l for l in pretty_recipients(msg))
+        + "\n\n"
+        + msg.get_body(preferencelist=("related", "plain", "html")).get_content()
+    )
+    return fwd_msg
 
 
 def pretty_recipients(msg):
@@ -230,6 +433,32 @@ def pretty_recipients(msg):
         yield "Cc: {}".format(", ".join(str(a) for a in msg["cc"].addresses))
     if msg.get("Bcc"):
         yield "Bcc: {}".format(", ".join(str(a) for a in msg["bcc"].addresses))
+
+
+def recipients_list(msg):
+    return getaddresses(
+        msg.get_all("To", []) + msg.get_all("Cc", []) + msg.get_all("Bcc", [])
+    )
+
+
+def get_sender(*, msg, config):
+    """
+    Get the new sender, based on the recipients from the message.
+
+    Suitable for use in ``msg['From']``.
+    """
+    recipients = set()
+    all_recipients = recipients_list(msg)
+    if len(all_recipients) > 1:
+        for name, addr in all_recipients:
+            if addr in config:
+                recipients.add((name, addr))
+        # TODO: This requires manual removal of the extra "From" addresses -W. Werner, 2019-06-19
+        # We should prompt and ask the user which one they want to use...
+        sender = ", ".join(formataddr(a) for a in recipients)
+    else:
+        sender = formataddr(all_recipients[0])
+    return sender
 
 
 def send_message(
@@ -412,9 +641,9 @@ class MsgPrompt(Cmd):
                 .split("\n")
             )
         except (AttributeError, KeyError):
-            lines =  list(f'- {part.get_content_type()}' for part in self.msg.walk())
+            lines = list(f"- {part.get_content_type()}" for part in self.msg.walk())
             if not lines:
-                lines.append('\tNo parts')
+                lines.append("\tNo parts")
             lines.insert(0, "No message body. Parts:")
         if len(lines) > 20:
             lines = lines[:19] + ["... truncated"]
@@ -426,7 +655,7 @@ Date: {self.msg.date}
 {recipients or 'No recipients headers found???'}
 Subject: {' '.join(self.msg.subject.split(chr(10)))}
             """.strip()
-            + '\n\n'
+            + "\n\n"
             + body
         )
 
@@ -434,156 +663,37 @@ Subject: {' '.join(self.msg.subject.split(chr(10)))}
         """
         Reply to the original sender. Add 'all' to reply to all.
         """
-        try:
-            from_addr = self.msg.get("From").addresses[0]
-            sender = from_addr.display_name or str(from_addr)
-        except IndexError:
-            sender = "Unknown"
-
-        try:
-            date = parsedate_to_datetime(self.msg["Date"])
-        except KeyError:
-            date = "a day in the past"
-        except TypeError:
-            date = self.msg["Date"]
-        else:
-            date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
-
-        re_msg = MIMEText(
-            f"On {date}, {sender} wrote:\n> "
-            + self.msg.get_body(preferencelist=("related", "plain", "html"))
-            .get_content()
-            .replace("\n", "\n> ")
+        sender = get_sender(msg=self.msg, config=self.config)
+        reply_all = input("Reply All? [y/N]: ").lower().strip() in ("y", "yes")
+        take_action(
+            original_msg=replyify(msg=self.msg, sender=sender, reply_all=reply_all),
+            editor=self.config["EDITOR"],
+            mailbox=self.mailbox,
+            abort_timeout=self.config["ABORT_TIMEOUT"],
+            draftdir=self.mailbox.draftpath,
         )
-        re_msg["To"] = ", ".join(
-            str(a) for s in self.msg.get_all("From") for a in s.addresses
-        )
-        if line == "all":
-            re_msg["Cc"] = ", ".join(
-                str(a)
-                for s in chain(self.msg.get_all("Cc", []), self.msg.get_all("Bcc", []))
-                for a in s.addresses
-            )
-        # TODO: Figure out which one of our addresses this was sent to -W. Werner, 2019-05-23
-        addr = self.config.get("DEFAULT_FROM")
-        re_msg["Subject"] = f"Re: {self.msg.subject}"
-        for header in self.config[addr]["HEADERS"]:
-            if header.lower() != "subject":
-                re_msg[header] = self.config[addr]["HEADERS"][header]
-
-        with tempfile.NamedTemporaryFile(suffix=".eml") as f:
-            f.write(re_msg.as_bytes(policy=POLICY))
-            f.flush()
-            subprocess.call([self.config["EDITOR"], f.name])
-            f.seek(0)
-            re_msg = self.mailbox._parser.parse(f)
-
-        print("=" * 20)
-        print(str(re_msg))
-        print("=" * 20)
-        choice = input("Send message? [Y/n]:")
-        if choice.lower() not in ("n", "no"):
-            abort_time = self.config.get("ABORT_TIMEOUT")
-            while abort_time:
-                print(f"\rSending in {abort_time}s", end="")
-                sys.stdout.flush()
-                time.sleep(1)
-                abort_time -= 1
-            print("\rSending message...", end="")
-            sys.stdout.flush()
-            if re_msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
-                re_msg = commonmarkdown(re_msg)
-            send_message(
-                smtp_host=self.config[addr]["SMTP_HOST"],
-                smtp_port=self.config[addr]["SMTP_PORT"],
-                use_tls=self.config[addr].get("SMTP_USE_TLS"),
-                username=self.config[addr].get("SMTP_USERNAME"),
-                password=self.config[addr].get("SMTP_PASSWORD"),
-                msg=re_msg,
-            )
-            print("Sent!")
 
     def do_forward(self, line):
         """
         Forward email to recipient.
         """
-        try:
-            from_addr = self.msg.get("From").addresses[0]
-            sender = from_addr.display_name or str(from_addr)
-        except IndexError:
-            sender = "Unknown"
-
-        try:
-            date = parsedate_to_datetime(self.msg["Date"])
-        except KeyError:
-            date = "a day in the past"
-        except TypeError:
-            date = self.msg["Date"]
-        else:
-            date = date.strftime("%a, %B %d, %Y").rstrip()
-
-        fwd_msg = MIMEText(
-            dedent(
-                f"""
-            ---------- Forwarded Message ----------
-            From: {self.msg.get("From")}
-            Date: {date}
-            Subject: {self.msg.subject}
-            """
+        keep_attachments = False
+        if any(self.msg.iter_parts()):
+            keep_attachments = input("Include attachments? [y/N]: ").lower() in (
+                "y",
+                "Yes",
             )
-            + "\n".join(l for l in pretty_recipients(self.msg))
-            + "\n"
-            + self.msg.get_body(
-                preferencelist=("related", "plain", "html")
-            ).get_content()
+
+        sender = get_sender(msg=self.msg, config=self.config)
+        take_action(
+            original_msg=forwardify(
+                msg=self.msg, sender=sender, keep_attachments=keep_attachments
+            ),
+            editor=self.config["EDITOR"],
+            mailbox=self.mailbox,
+            abort_timeout=self.config["ABORT_TIMEOUT"],
+            draftdir=self.mailbox.draftpath,
         )
-        fwd_msg["To"] = ", ".join(
-            str(a) for s in self.msg.get_all("From") for a in s.addresses
-        )
-        if line == "all":
-            fwd_msg["Cc"] = ", ".join(
-                str(a)
-                for s in chain(self.msg.get_all("Cc", []), self.msg.get_all("Bcc", []))
-                for a in s.addresses
-            )
-        # TODO: Figure out which one of our addresses this was sent to -W. Werner, 2019-05-23
-        addr = self.config.get("DEFAULT_FROM")
-        fwd_msg["Subject"] = f"Fwd: {self.msg.subject}"
-        for header in self.config[addr]["HEADERS"]:
-            if header.lower() != "subject":
-                fwd_msg[header] = self.config[addr]["HEADERS"][header]
-
-        with tempfile.NamedTemporaryFile(suffix=".eml") as f:
-            f.write(fwd_msg.as_bytes(policy=POLICY))
-            f.flush()
-            subprocess.call([self.config["EDITOR"], f.name])
-            f.seek(0)
-            fwd_msg = self.mailbox._parser.parse(f)
-
-        print("=" * 20)
-        print(str(fwd_msg))
-        print("=" * 20)
-        choice = input("Send message? [Y/n]:")
-        if choice.lower() not in ("n", "no"):
-            abort_time = self.config.get("ABORT_TIMEOUT")
-            while abort_time:
-                print(f"\rSending in {abort_time}s", end="")
-                sys.stdout.flush()
-                time.sleep(1)
-                abort_time -= 1
-            print("\rSending message...", end="")
-            sys.stdout.flush()
-            if fwd_msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
-                fwd_msg = commonmarkdown(fwd_msg)
-            send_message(
-                smtp_host=self.config[addr]["SMTP_HOST"],
-                smtp_port=self.config[addr]["SMTP_PORT"],
-                use_tls=self.config[addr].get("SMTP_USE_TLS"),
-                username=self.config[addr].get("SMTP_USERNAME"),
-                password=self.config[addr].get("SMTP_PASSWORD"),
-                msg=fwd_msg,
-            )
-            print("Sent!")
 
     # Aliases
     do_d = do_del = do_delete
@@ -598,7 +708,7 @@ Subject: {' '.join(self.msg.subject.split(chr(10)))}
 
 class CliMail(Cmd):
     def __init__(self, mailbox, config):
-        print(']0;wemail', end='\a', flush=True)
+        print("]0;wemail", end="\a", flush=True)
         super().__init__()
         self.config = config
         self.mailbox = mailbox
@@ -617,8 +727,14 @@ class CliMail(Cmd):
         return [p.name for p in self.mailbox.curpath.glob(text + "*")]
 
     def complete_compose(self, text, line, begidx, endidx):
-        return [self.address_book[alias] for alias in self.address_book if alias.lower().startswith(text.lower()) or text.lower() in self.address_book[alias].lower()]
+        return [
+            self.address_book[alias]
+            for alias in self.address_book
+            if alias.lower().startswith(text.lower())
+            or text.lower() in self.address_book[alias].lower()
+        ]
 
+    # TODO: Unify this finishing functionality -W. Werner, 2019-06-19
     def finish(self, msg):
         raw_msg = msg
         print(msg)
@@ -895,13 +1011,16 @@ class WeMaildir:
         with mail.open("rb") as f:
             msg = self._parser.parse(f)
             sender = msg["From"]
+            config = self.config.get(
+                sender, self.config.get(self.config.get("DEFAULT_FROM"))
+            )
             try:
                 send_func(
-                    smtp_host=self.config[sender]["SMTP_HOST"],
-                    smtp_port=self.config[sender]["SMTP_PORT"],
-                    use_tls=self.config[sender].get("SMTP_USE_TLS"),
-                    username=self.config[sender].get("SMTP_USERNAME"),
-                    password=self.config[sender].get("SMTP_PASSWORD"),
+                    smtp_host=config["SMTP_HOST"],
+                    smtp_port=config["SMTP_PORT"],
+                    use_tls=config.get("SMTP_USE_TLS"),
+                    username=config.get("SMTP_USERNAME"),
+                    password=config.get("SMTP_PASSWORD"),
                     msg=msg,
                 )
             except:
@@ -995,7 +1114,7 @@ def update():
         else:
             print("Okay! Not upgrading...")
     else:
-        print('All up-to-date! Sweet!')
+        print("All up-to-date! Sweet!")
 
 
 def do_it():  # Shia LeBeouf!

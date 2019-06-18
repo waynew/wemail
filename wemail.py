@@ -994,6 +994,8 @@ def update():
                 return
         else:
             print("Okay! Not upgrading...")
+    else:
+        print('All up-to-date! Sweet!')
 
 
 def do_it():  # Shia LeBeouf!

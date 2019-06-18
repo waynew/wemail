@@ -5,6 +5,10 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Message now prints when you're up to date.
+
 ---
 
 ## [0.1.13] - 2019-06-18

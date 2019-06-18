@@ -5,6 +5,10 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.1.12] - 2019-06-18
+
 ### Added
 
 - Uses linux escape sequences to (try) and set the terminal title.
@@ -33,7 +37,6 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
   behaviors in editors that honor that kind of thing.
 - Save raw message as draft after compose, rather than rendered.
 
----
 
 ## [0.1.11] - 2019-06-06
 

@@ -7,6 +7,12 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.13] - 2019-06-18
+
+### Added
+
+- `update` command lets you check for updates without exiting the program.
+
 ## [0.1.12] - 2019-06-18
 
 ### Added

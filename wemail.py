@@ -38,7 +38,7 @@ except ImportError:
     except ImportError:
         commonmark = None
 
-__version__ = "0.1.12"
+__version__ = "0.1.13"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -806,6 +806,9 @@ class CliMail(Cmd):
         Display WEmail version info.
         """
         print(f"{__version__}")
+
+    def do_update(self, line):
+        update()
 
     do_q = do_quit
     do_c = do_compose

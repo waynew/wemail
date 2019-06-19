@@ -43,7 +43,7 @@ except ImportError as e:
     except ImportError:
         commonmark = None
 
-__version__ = "0.1.14"
+__version__ = "0.1.15"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -570,7 +570,7 @@ class MsgPrompt(Cmd):
             return True
 
     def do_save(self, line):
-        self.mailbox.move_to(key=self.msg.key, folder=line.strip())
+        self.mailbox.move_to(key=self.msg.key, folder=line.strip() or 'saved-mail')
         print("Saved!")
         return True
 

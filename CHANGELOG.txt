@@ -7,6 +7,12 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.15] - 2019-06-18
+
+### Changed
+
+- Saving without a folder now saves to `saved-mail`
+
 ## [0.1.14] - 2019-06-18
 
 ### Fixed

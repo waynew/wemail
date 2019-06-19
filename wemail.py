@@ -43,7 +43,7 @@ except ImportError as e:
     except ImportError:
         commonmark = None
 
-__version__ = "0.1.16"
+__version__ = "0.1.17"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -924,8 +924,7 @@ class CliMail(Cmd):
         print(f"{__version__}")
 
     def do_update(self, line):
-        update()
-        return True
+        return update()
 
     do_q = do_quit
     do_c = do_compose
@@ -1114,7 +1113,7 @@ def update():
                 except KeyError:
                     pass  # Huh. Okay *shrugs*
                 subprocess.run([sys.executable, "-m", "wemail", *sys.argv[1:]], env=env)
-                return
+                return True
         else:
             print("Okay! Not upgrading...")
     else:

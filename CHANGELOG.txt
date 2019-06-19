@@ -7,6 +7,12 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.17] - 2019-06-18
+
+### Fixed
+
+- Update from the prompt no longer quits if there are no updates.
+
 ## [0.1.16] - 2019-06-18
 
 ### Fixed

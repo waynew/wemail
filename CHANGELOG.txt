@@ -7,6 +7,12 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.16] - 2019-06-18
+
+### Fixed
+
+- Update from the prompt now actually works, instead of throwing an error.
+
 ## [0.1.15] - 2019-06-18
 
 ### Changed

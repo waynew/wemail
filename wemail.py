@@ -673,19 +673,22 @@ class MsgPrompt(Cmd):
             if recipients:
                 recipients += "\n"
             recipients += f"Bcc: {', '.join(to)}"
+        termsize = shutil.get_terminal_size()
         try:
             lines = (
                 self.msg.get_body(preferencelist=("related", "plain", "html"))
                 .get_content()
                 .split("\n")
             )
+            lines = list(chain(*(chunkstring(line, length=min(termsize.columns, 120)) for line in lines)))
         except (AttributeError, KeyError):
             lines = list(f"- {part.get_content_type()}" for part in self.msg.walk())
             if not lines:
                 lines.append("\tNo parts")
             lines.insert(0, "No message body. Parts:")
-        if len(lines) > 20:
-            lines = lines[:19] + ["... truncated"]
+        offset = 10
+        if len(lines)+offset > termsize.lines:
+            lines = lines[:termsize.lines-offset] + ["... truncated"]
         body = "\n".join(lines)
         print(
             f"""\

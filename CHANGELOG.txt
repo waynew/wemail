@@ -5,6 +5,10 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.1.18] - 2019-07-24
+
 ### Added
 
 - `links` command now parses URLs from the message body.
@@ -15,8 +19,6 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
   wraps the message at 120 characters wide, or the width of the terminal -
   whichever is smaller.
 - Header wraps message body, so truncating should be a lot nicer. Also wraps.
-
----
 
 ## [0.1.17] - 2019-06-18
 

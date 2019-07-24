@@ -44,7 +44,7 @@ except ImportError as e:
     except ImportError:
         commonmark = None
 
-__version__ = "0.1.17"
+__version__ = "0.1.18"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)

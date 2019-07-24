@@ -4,6 +4,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import smtplib
 import subprocess
 import sys
@@ -96,6 +97,17 @@ class Message:
 
     def send(self, smtp):
         ...
+
+
+def chunkstring(text, length=80):
+    '''
+    Chunk string into fixed length strings. If string, or leftover piece,
+    is smaller than ``length``, return string.
+    '''
+    start = 0
+    while start == 0 or start+length <= len(text):
+        yield text[start:start+length]
+        start = start+length
 
 
 def action_prompt():
@@ -528,6 +540,20 @@ class MsgPrompt(Cmd):
                 parts.clear()
                 return self.get_part("")
 
+    def do_links(self, line):
+        '''
+        Print a list of links found in the message. If an argument
+        is provided it's interpreted as the part of the message to
+        search through, for multipart messages.
+        '''
+        if line:
+            part = self.get_part(line).get_payload(decode=True).decode()
+        else:
+            part = self.msg.get_body(preferencelist=("related", "plain", "html")).get_content()
+        results = re.findall('[a-zA-Z0-9]*://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', part)
+        for result in results:
+            print(result)
+
     def do_key(self, line):
         """
         Print the current message's key.
@@ -591,9 +617,22 @@ class MsgPrompt(Cmd):
         """
         Print the message body - text/plain if it exists
         """
-        print(
-            self.msg.get_body(preferencelist=("related", "plain", "html")).get_content()
-        )
+        termsize = shutil.get_terminal_size()
+        import textwrap
+        body = self.msg.get_body(preferencelist=("related", "plain", "html")).get_content().splitlines()
+
+        count = 0
+        for line in body:
+            # TODO: Make max width configurable -W. Werner, 2019-07-24
+            for part in chunkstring(line, length=min(termsize.columns, 120)):
+                count += 1
+                print(part)
+                if count+5 >= termsize.lines:
+                    cont = input('<Enter> to continue...')
+                    if cont.lower() in ('q', 'c', 'cancel'):
+                        print('Skipping')
+                        return
+                    count = 0
 
     def do_p1(self, line):
         """

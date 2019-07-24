@@ -5,6 +5,16 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `links` command now parses URLs from the message body.
+
+### Changed
+
+- `body` now displays the message body interactively if it's too long. It also
+  wraps the message at 120 characters wide, or the width of the terminal -
+  whichever is smaller.
+
 ---
 
 ## [0.1.17] - 2019-06-18

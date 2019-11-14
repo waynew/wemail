@@ -7,6 +7,18 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0] - 2019-11-14
+
+### Added 
+
+- `filter` command - filters all messages in current folder.
+- `ext` command - allows viewing different parts in external viewers/editors.
+
+### Changed
+
+- No longer wrap body lines, because it was wrapping the wrong way.
+- `ls` display no longer shows filename, but email subject
+
 ## [0.1.18] - 2019-07-24
 
 ### Added

@@ -949,7 +949,11 @@ class CliMail(Cmd):
     def do_ls(self, line):
         if not line.strip():
             for msg in self.mailbox:
-                print(f'{msg.path} - {msg.date} - {msg["From"]}')
+                line = f'{msg.date} - {msg["From"]} - {msg["subject"]}'
+                # TODO: use terminal length instead -W. Werner, 2019-11-14
+                if len(line) > 80:
+                    line = f'{line[:77]}...'
+                print(line)
 
     def do_proc(self, line):
         """

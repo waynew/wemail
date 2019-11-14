@@ -955,6 +955,16 @@ class CliMail(Cmd):
                     line = f'{line[:77]}...'
                 print(line)
 
+    def do_filter(self, line):
+        filter_cmds = self.config.get('filters', [])
+        for msg_path in self.mailbox.curpath.iterdir():
+            for filter_cmd in filter_cmds:
+                if not filter_cmd: continue  # Make sure we have a filter
+                try:
+                    result = subprocess.run(filter_cmd+[msg_path])
+                except Exception as e:
+                    print('Error filtering', filter_cmd, e)
+
     def do_proc(self, line):
         """
         Process emails one at a time.

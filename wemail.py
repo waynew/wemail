@@ -624,6 +624,8 @@ class MsgPrompt(Cmd):
         count = 0
         for line in body:
             # TODO: Make max width configurable -W. Werner, 2019-07-24
+            print(line)
+            continue
             for part in chunkstring(line, length=min(termsize.columns, 120)):
                 count += 1
                 print(part)

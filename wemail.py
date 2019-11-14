@@ -642,6 +642,27 @@ class MsgPrompt(Cmd):
         """
         return self.do_parts("1")
 
+    def do_ext(self, line):
+        """
+        View message part in external viewer/program.
+
+        Usage: ext PROGRAM PART
+
+        Example: ext lynx 2
+        """
+        program, _, part = line.partition(' ')
+        program = program.strip()
+        part = part.strip()
+        if not (program or part):
+            print('Usage: ext PROGRAM PART')
+        part = self.get_part(part)
+        filename = part.get_filename() or ''
+        extension = mimetypes.guess_extension(part.get_content_type()) or '.txt'
+        with tempfile.NamedTemporaryFile(prefix=filename, suffix=extension) as f:
+            f.write(part.get_payload(decode=True))
+            f.flush()
+            subprocess.call([program, f.name])
+
     def do_parts(self, line):
         part = self.get_part(line)
         if part is None:

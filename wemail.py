@@ -1,4 +1,6 @@
+import argparse
 import ast
+import collections
 import io
 import json
 import mimetypes
@@ -50,6 +52,23 @@ CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
 SKIPPED_HEADERS = ("To", "Cc", "DKIM-Signature", "Message-ID", "Subject")
 DEFAULT_HEADERS = {"From": "", "To": "", "Subject": ""}
+EmailTemplate = collections.namedtuple("EmailTemplate", "name,content")
+
+
+def make_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config",
+        type=argparse.FileType("r"),
+        default=Path("~/.wemailrc").expanduser().resolve().open("r"),
+    )
+    subparsers = parser.add_subparsers()
+    action_parser = subparsers.add_parser("new")
+    action_parser.set_defaults(action="new")
+
+    sendall_parser = subparsers.add_parser("send_all")
+    sendall_parser.set_defaults(action="send_all")
+    return parser
 
 
 class WEmailError(Exception):
@@ -100,14 +119,14 @@ class Message:
 
 
 def chunkstring(text, length=80):
-    '''
+    """
     Chunk string into fixed length strings. If string, or leftover piece,
     is smaller than ``length``, return string.
-    '''
+    """
     start = 0
-    while start == 0 or start+length <= len(text):
-        yield text[start:start+length]
-        start = start+length
+    while start == 0 or start + length <= len(text):
+        yield text[start : start + length]
+        start = start + length
 
 
 def action_prompt():
@@ -541,16 +560,19 @@ class MsgPrompt(Cmd):
                 return self.get_part("")
 
     def do_links(self, line):
-        '''
+        """
         Print a list of links found in the message. If an argument
         is provided it's interpreted as the part of the message to
         search through, for multipart messages.
-        '''
+        """
         if line:
             part = self.get_part(line).get_payload(decode=True).decode()
         else:
-            part = self.msg.get_body(preferencelist=("related", "plain", "html")).get_content()
-        results = re.findall('[a-zA-Z0-9]*://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', part)
+            part = self.msg.get_body(
+                preferencelist=("related", "plain", "html")
+            ).get_content()
+        # results = re.findall('[a-zA-Z0-9]*://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', part)
+        results = re.findall(r"[a-zA-Z0-9]*://\S*", part)
         for result in results:
             print(result)
 
@@ -596,7 +618,7 @@ class MsgPrompt(Cmd):
             return True
 
     def do_save(self, line):
-        self.mailbox.move_to(key=self.msg.key, folder=line.strip() or 'saved-mail')
+        self.mailbox.move_to(key=self.msg.key, folder=line.strip() or "saved-mail")
         print("Saved!")
         return True
 
@@ -619,7 +641,12 @@ class MsgPrompt(Cmd):
         """
         termsize = shutil.get_terminal_size()
         import textwrap
-        body = self.msg.get_body(preferencelist=("related", "plain", "html")).get_content().splitlines()
+
+        body = (
+            self.msg.get_body(preferencelist=("related", "plain", "html"))
+            .get_content()
+            .splitlines()
+        )
 
         count = 0
         for line in body:
@@ -629,10 +656,10 @@ class MsgPrompt(Cmd):
             for part in chunkstring(line, length=min(termsize.columns, 120)):
                 count += 1
                 print(part)
-                if count+5 >= termsize.lines:
-                    cont = input('<Enter> to continue...')
-                    if cont.lower() in ('q', 'c', 'cancel'):
-                        print('Skipping')
+                if count + 5 >= termsize.lines:
+                    cont = input("<Enter> to continue...")
+                    if cont.lower() in ("q", "c", "cancel"):
+                        print("Skipping")
                         return
                     count = 0
 
@@ -650,14 +677,14 @@ class MsgPrompt(Cmd):
 
         Example: ext lynx 2
         """
-        program, _, part = line.partition(' ')
+        program, _, part = line.partition(" ")
         program = program.strip()
         part = part.strip()
         if not (program or part):
-            print('Usage: ext PROGRAM PART')
+            print("Usage: ext PROGRAM PART")
         part = self.get_part(part)
-        filename = part.get_filename() or ''
-        extension = mimetypes.guess_extension(part.get_content_type()) or '.txt'
+        filename = part.get_filename() or ""
+        extension = mimetypes.guess_extension(part.get_content_type()) or ".txt"
         with tempfile.NamedTemporaryFile(prefix=filename, suffix=extension) as f:
             f.write(part.get_payload(decode=True))
             f.flush()
@@ -703,15 +730,22 @@ class MsgPrompt(Cmd):
                 .get_content()
                 .split("\n")
             )
-            lines = list(chain(*(chunkstring(line, length=min(termsize.columns, 120)) for line in lines)))
+            lines = list(
+                chain(
+                    *(
+                        chunkstring(line, length=min(termsize.columns, 120))
+                        for line in lines
+                    )
+                )
+            )
         except (AttributeError, KeyError):
             lines = list(f"- {part.get_content_type()}" for part in self.msg.walk())
             if not lines:
                 lines.append("\tNo parts")
             lines.insert(0, "No message body. Parts:")
         offset = 10
-        if len(lines)+offset > termsize.lines:
-            lines = lines[:termsize.lines-offset] + ["... truncated"]
+        if len(lines) + offset > termsize.lines:
+            lines = lines[: termsize.lines - offset] + ["... truncated"]
         body = "\n".join(lines)
         print(
             f"""\
@@ -952,18 +986,19 @@ class CliMail(Cmd):
                 line = f'{msg.date} - {msg["From"]} - {msg["subject"]}'
                 # TODO: use terminal length instead -W. Werner, 2019-11-14
                 if len(line) > 80:
-                    line = f'{line[:77]}...'
+                    line = f"{line[:77]}..."
                 print(line)
 
     def do_filter(self, line):
-        filter_cmds = self.config.get('filters', [])
+        filter_cmds = self.config.get("filters", [])
         for msg_path in self.mailbox.curpath.iterdir():
             for filter_cmd in filter_cmds:
-                if not filter_cmd: continue  # Make sure we have a filter
+                if not filter_cmd:
+                    continue  # Make sure we have a filter
                 try:
-                    result = subprocess.run(filter_cmd+[msg_path])
+                    result = subprocess.run(filter_cmd + [msg_path])
                 except Exception as e:
-                    print('Error filtering', filter_cmd, e)
+                    print("Error filtering", filter_cmd, e)
 
     def do_proc(self, line):
         """
@@ -1235,5 +1270,165 @@ def do_it():  # Shia LeBeouf!
         print("^C caught, goodbye!")
 
 
+#### Not sure about stuff above here!
+
+
+def _make_draftname(*, subject, timestamp=None):
+    timestamp = timestamp or datetime.now()
+    sanitized = "-".join(re.sub(r"[^A-Za-z]", " ", subject).split())
+    return f"{timestamp:%Y%m%d%H%M%S}-{sanitized}.eml"
+
+
+def create_draft(*, template, config):
+    """
+    Creates a draft email from the provided template
+    """
+    draft_dir = config.get("draft_dir", config["maildir"] / "drafts")
+    draft_dir.mkdir(parents=True, exist_ok=True)
+
+    msg = _parser.parsebytes(template.encode())
+
+    f = draft_dir / _make_draftname(subject=(msg["subject"] or ""))
+    f.write_text(template)
+    return f
+
+
+def ensure_maildirs_exist(*, maildir):
+    maildir = Path(maildir)
+    dirnames = ("new", "cur", "drafts", "outbox", "sent")
+
+    for dirname in dirnames:
+        (maildir / dirname).mkdir(parents=True, exist_ok=True)
+
+
+def get_templates(*, dirname):
+    path = Path(dirname)
+    templates = []
+    for f in path.iterdir():
+        templates.append(EmailTemplate(name=f.name, content=f.read_text()))
+    return templates
+
+
+def do_new(config):
+    maildir = config["maildir"]
+    templates = get_templates(dirname=maildir / "templates")
+    if not templates:
+        print(f"No templates. Add some to {templates} and try again")
+        return
+    for i, template in enumerate(templates, start=1):
+        print(f"{i}. {template.name}")
+    done = False
+    while not done:
+        choice = input(f"Which template? [1-{len(templates)} (^C quits)]: ")
+        try:
+            template = templates[int(choice) - 1]
+        except (IndexError, ValueError):
+            print("Invalid choice {choice!r}")
+        else:
+            done = True
+    draft = create_draft(template=template.content, config=config)
+    subprocess.call([config["EDITOR"], draft])
+    choice = action_prompt()
+    if choice == "s":
+        print("^C to cancel sending")
+        timer = config.get("ABORT_TIMEOUT", 5)
+        for sec in range(timer):
+            try:
+                print(f"\rSending in {timer-sec}...[0K", end="")
+                sys.stdout.flush()
+                time.sleep(1)
+            except KeyboardInterrupt:
+                print("\r^C caught, draft saved.[0K")
+                break
+        else:
+            print("\rSending now...[0K")
+            stage_name = draft.parent.parent / "outbox" / draft.name
+            draft = draft.rename(stage_name)
+            msg = _parser.parsebytes(stage_name.read_bytes())
+            send_message(
+                msg=msg,
+                smtp_host=config.get("SMTP_HOST", "localhost"),
+                smtp_port=config.get("SMTP_PORT", 25),
+                use_tls=config.get("SMTP_USE_TLS", False),
+                use_smtps=config.get("SMTP_USE_SMTPS", False),
+                username=config.get("SMTP_USERNAME", False),
+                password=config.get("SMTP_PASSWORD", False),
+            )
+            sent_name = stage_name.parent.parent / "sent" / stage_name.name
+            stage_name.rename(sent_name)
+            print("Sent!")
+            staged_email_count = len(list((maildir / "outbox").iterdir()))
+            if staged_email_count:
+                print(
+                    f"{staged_email_count} emails to send. Run `{sys.argv[0]} send_all` to send."
+                )
+    elif choice == "q":
+        stage_name = draft.parent.parent / "outbox" / draft.name
+        draft.rename(stage_name)
+        print(f"Email queued as {stage_name}")
+    elif choice == "v":
+        print(f"Draft saved as {draft}")
+    elif choice == "d":
+        choice = input("Really delete draft? Cannot be undone! [y/N]: ")
+        if choice.lower() in ("y", "yes", "ja", "si", "oui"):
+            draft.unlink()
+
+
+def send_all(*, config):
+    maildir = config["maildir"]
+    outbox = maildir / "outbox"
+    sentdir = maildir / "sent"
+    to_send = list(outbox.iterdir())
+    if not to_send:
+        print("Nothing to send.")
+        return
+    print("Going to send...")
+    for mailfile in to_send:
+        print(mailfile)
+    choice = input("Really send all? [Y/n]: ")
+    if choice.lower().strip() not in ("", "y", "yes", "si", "oui", "ja"):
+        print("Aborted!")
+        return
+    for mailfile in to_send:
+        msg = _parser.parsebytes(mailfile.read_bytes())
+        print(f'Sending {msg["subject"]!r} to {msg["to"]}')
+        send_message(
+            msg=msg,
+            smtp_host=config.get("SMTP_HOST", "localhost"),
+            smtp_port=config.get("SMTP_PORT", 25),
+            use_tls=config.get("SMTP_USE_TLS", False),
+            use_smtps=config.get("SMTP_USE_SMTPS", False),
+            username=config.get("SMTP_USERNAME", False),
+            password=config.get("SMTP_PASSWORD", False),
+        )
+        mailfile.rename(sentdir / mailfile.name)
+    print("Done!")
+
+
+def load_config(config_file):
+    config = json.load(config_file)
+    if "" in config:
+        config.pop("")
+
+    config["maildir"] = Path(config.get("maildir", "~/wemail/")).expanduser().resolve()
+    config["EDITOR"] = os.environ.get("EDITOR", os.environ.get("VISUAL", "nano"))
+    return config
+
+
+def do_it_two_it(args):  # Shia LeBeouf!
+    try:
+        config = load_config(args.config)
+        ensure_maildirs_exist(maildir=config["maildir"])
+        if args.action == "new":
+            return do_new(config=config)
+        elif args.action == "send_all":
+            return send_all(config=config)
+        print("hai")
+    except KeyboardInterrupt:
+        print("\n^C caught, bye!")
+
+
 if __name__ == "__main__":
-    do_it()
+    parser = make_parser()
+    args = parser.parse_args()
+    do_it_two_it(args)

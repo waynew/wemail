@@ -5,11 +5,16 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- WEmail interface is re-written. Rather than a prompt style program, arguments
+  are passed via command line. Run `wemail --help` for more info.
+
 ---
 
 ## [0.2.0] - 2019-11-14
 
-### Added 
+### Added
 
 - `filter` command - filters all messages in current folder.
 - `ext` command - allows viewing different parts in external viewers/editors.

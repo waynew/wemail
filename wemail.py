@@ -62,12 +62,22 @@ def make_parser():
         type=argparse.FileType("r"),
         default=Path("~/.wemailrc").expanduser().resolve().open("r"),
     )
+    parser.add_argument(
+        "--version", action="store_true", default=False, help="Print the version."
+    )
     subparsers = parser.add_subparsers()
-    action_parser = subparsers.add_parser("new")
+    action_parser = subparsers.add_parser(
+        "new", help="Create new email from templates."
+    )
     action_parser.set_defaults(action="new")
 
-    sendall_parser = subparsers.add_parser("send_all")
+    sendall_parser = subparsers.add_parser(
+        "send_all", help="Send all emails in outbox."
+    )
     sendall_parser.set_defaults(action="send_all")
+
+    check_parser = subparsers.add_parser("check", help="Check for new email.")
+    check_parser.set_defaults(action="check")
     return parser
 
 
@@ -1309,6 +1319,18 @@ def get_templates(*, dirname):
     return templates
 
 
+def do_check(config):
+    maildir = config["maildir"]
+    curdir = maildir / "cur"
+    newdir = maildir / "new"
+    count = 0
+    for file in newdir.iterdir():
+        count += 1
+        nextpath = curdir / file.name
+        file.rename(nextpath)
+    print(f'{count} new message{"s" if count != 1 else ""}.')
+
+
 def do_new(config):
     maildir = config["maildir"]
     templates = get_templates(dirname=maildir / "templates")
@@ -1416,6 +1438,9 @@ def load_config(config_file):
 
 
 def do_it_two_it(args):  # Shia LeBeouf!
+    if args.version:
+        print(__version__)
+        return
     try:
         config = load_config(args.config)
         ensure_maildirs_exist(maildir=config["maildir"])
@@ -1423,6 +1448,16 @@ def do_it_two_it(args):  # Shia LeBeouf!
             return do_new(config=config)
         elif args.action == "send_all":
             return send_all(config=config)
+        elif args.action == "check":
+            return do_check(config=config)
+        elif args.action == "filter":
+            ...
+        elif args.action == "update":
+            ...
+        elif args.action == "reply":
+            ...
+        elif args.action == "reply_all":
+            ...
         print("hai")
     except KeyboardInterrupt:
         print("\n^C caught, bye!")

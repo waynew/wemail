@@ -74,23 +74,35 @@ def goodheaders():
 @pytest.fixture()
 def temp_maildir():
     with tempfile.TemporaryDirectory() as dirname:
+        dirp = pathlib.Path(dirname)
+        wemail.ensure_maildirs_exist(maildir=dirp)
+        newmail_dir = dirp / "new"
+        for i in range(1, 4):
+            fname = newmail_dir / f"message{i}.eml"
+            fname.write_text(
+                """From: person.man@example.com\nTo: triangle.man@example.com\nSubject: I hate you\n\nLet's have a fight!"""
+            )
         yield dirname
 
 
 @pytest.fixture()
 def good_config(temp_maildir):
     file = io.StringIO()
-    json.dump({
-        "maildir": temp_maildir,
-    }, file)
+    json.dump({"maildir": temp_maildir}, file)
     file.seek(0)
     return file
 
 
 @pytest.fixture()
+def good_loaded_config(good_config):
+    config = wemail.load_config(good_config)
+    return config
+
+
+@pytest.fixture()
 def args_new_alone(good_config):
-    Namespace = namedtuple("Namespace", "action,config")
-    return Namespace(action="new", config=good_config)
+    Namespace = namedtuple("Namespace", "action,config,version")
+    return Namespace(action="new", config=good_config, version=False)
 
 
 def test_when_action_is_new_it_should_do_new(args_new_alone):
@@ -181,18 +193,19 @@ def test_get_templates_with_multiple_templates_should_return_templates():
 # Start Create Draft Tests #
 ############################
 
+
 def test_create_drafts_should_create_a_draft_from_the_email():
     template = textwrap.dedent(
-        '''
+        """
         From: whatever@example.com
         To: person_man@example.com
         Subject: Testing 123
-        '''
+        """
     ).strip()
 
     with tempfile.TemporaryDirectory() as dirname:
         maildir = pathlib.Path(dirname)
-        drafts = maildir / 'drafts'
+        drafts = maildir / "drafts"
         config = {"maildir": maildir}
         wemail.create_draft(template=template, config=config)
 
@@ -204,20 +217,20 @@ def test_create_drafts_should_create_a_draft_from_the_email():
 def test_create_drafts_should_use_created_filename():
     # TODO: DRY this out with the other one -W. Werner, 2019-11-17
     template = textwrap.dedent(
-        '''
+        """
         From: whatever@example.com
         To: person_man@example.com
         Subject: Testing 123
-        '''
+        """
     ).strip()
-    expected_name = 'blargle.eml'
+    expected_name = "blargle.eml"
 
     with tempfile.TemporaryDirectory() as dirname:
         maildir = pathlib.Path(dirname)
-        drafts = maildir / 'drafts'
+        drafts = maildir / "drafts"
         config = {"maildir": maildir}
         fake_draftname = mock.MagicMock(return_value=expected_name)
-        with mock.patch('wemail._make_draftname', fake_draftname):
+        with mock.patch("wemail._make_draftname", fake_draftname):
             wemail.create_draft(template=template, config=config)
 
         assert (drafts / expected_name).read_text() == template
@@ -229,9 +242,11 @@ def test_create_drafts_should_use_created_filename():
 
 
 def test_make_draftname_should_be_combination_of_the_current_timestamp_and_subject():
-    subject = 'Something Cool'
-    expected_draftname = '20100824000000-Something-Cool.eml'
-    actual_draftname = wemail._make_draftname(subject=subject, timestamp=datetime.datetime(2010, 8, 24, 0, 0, 0))
+    subject = "Something Cool"
+    expected_draftname = "20100824000000-Something-Cool.eml"
+    actual_draftname = wemail._make_draftname(
+        subject=subject, timestamp=datetime.datetime(2010, 8, 24, 0, 0, 0)
+    )
 
     assert actual_draftname == expected_draftname
 
@@ -240,16 +255,70 @@ def test_make_draftname_should_be_combination_of_the_current_timestamp_and_subje
 # Create maildir tests #
 ########################
 
+
 def test_ensure_maildirs_exist_should_create_proper_dirs():
     with tempfile.TemporaryDirectory() as dirname:
         maildir = pathlib.Path(dirname)
         wemail.ensure_maildirs_exist(maildir=maildir)
 
-        assert (maildir / 'cur').exists()
-        assert (maildir / 'new').exists()
-        assert (maildir / 'drafts').exists()
-        assert (maildir / 'outbox').exists()
-        assert (maildir / 'sent').exists()
+        assert (maildir / "cur").exists()
+        assert (maildir / "new").exists()
+        assert (maildir / "drafts").exists()
+        assert (maildir / "outbox").exists()
+        assert (maildir / "sent").exists()
+
+
+#####################
+# End maildir tests #
+#####################
+
+
+#####################
+# Check email tests #
+#####################
+
+
+def test_when_do_check_is_called_it_should_print_the_number_of_new_emails(
+    capsys, good_loaded_config
+):
+    wemail.do_check(config=good_loaded_config)
+
+    captured = capsys.readouterr()
+    assert captured.out == "3 new messages.\n"
+
+    fname = good_loaded_config["maildir"] / "new" / f"message.eml"
+    fname.write_text("From: me\nTo: you\nSubject: OK\n\nOK?")
+
+    wemail.do_check(config=good_loaded_config)
+
+    captured = capsys.readouterr()
+    assert captured.out == "1 new message.\n"
+
+    for i in range(10):
+        fname = good_loaded_config["maildir"] / "new" / f"message{i}.eml"
+        fname.write_text("From: me\nTo: you\nSubject: OK\n\nOK?")
+
+    wemail.do_check(config=good_loaded_config)
+
+    captured = capsys.readouterr()
+    assert captured.out == "10 new messages.\n"
+
+
+def test_when_do_check_is_called_it_should_move_all_files_from_new_to_cur(
+    good_loaded_config
+):
+    maildir = good_loaded_config["maildir"]
+    for i in range(5):
+        fname = maildir / "new" / f"message{i}.eml"
+        fname.write_text("From: me\nTo: you\nSubject: OK\n\nOK?")
+    expected_files = [file.name for file in (maildir / "new").iterdir()]
+
+    wemail.do_check(config=good_loaded_config)
+
+    actual_files = [file.name for file in (maildir / "cur").iterdir()]
+
+    assert expected_files == actual_files
+    assert expected_files != []
 
 
 # Below here? Not sure what's what!

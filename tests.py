@@ -28,6 +28,9 @@ class MyHandler:
         return "250 OK"
 
 
+parser = wemail.make_parser()
+
+
 @pytest.fixture(scope="module")
 def testdir():
     with tempfile.TemporaryDirectory() as dirname:
@@ -101,15 +104,116 @@ def good_loaded_config(good_config):
 
 @pytest.fixture()
 def args_new_alone(good_config):
-    Namespace = namedtuple("Namespace", "action,config,version")
     return Namespace(action="new", config=good_config, version=False)
 
 
-def test_when_action_is_new_it_should_do_new(args_new_alone):
-    fake_do_new = mock.MagicMock()
-    with mock.patch("wemail.do_new", fake_do_new):
+@pytest.fixture()
+def args_new_alone(good_config):
+    args = parser.parse_args(["new"])
+    args.config = good_config
+    return args
+
+
+@pytest.fixture()
+def args_send(good_config):
+    with tempfile.NamedTemporaryFile() as f:
+        args = parser.parse_args(["send", f.name])
+        yield args
+
+
+@pytest.fixture()
+def args_send_all(good_config):
+    args = parser.parse_args(["send_all"])
+    return args
+
+
+@pytest.fixture()
+def args_check(good_config):
+    args = parser.parse_args(["check"])
+    return args
+
+
+@pytest.fixture()
+def args_reply(good_config):
+    args = parser.parse_args(["reply"])
+    return args
+
+
+@pytest.fixture()
+def args_reply_all(good_config):
+    args = parser.parse_args(["reply_all"])
+    return args
+
+
+@pytest.fixture()
+def args_filter(good_config):
+    args = parser.parse_args(["filter"])
+    return args
+
+
+@pytest.fixture()
+def args_update(good_config):
+    args = parser.parse_args(["update"])
+    return args
+
+
+@pytest.fixture()
+def args_version(good_config):
+    args = parser.parse_args(["--version"])
+    return args
+
+
+def test_when_action_is_new_it_should_do_new(args_new_alone, good_loaded_config):
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with mock.patch("wemail.do_new", autospec=True) as fake_do_new, patch_config:
         wemail.do_it_two_it(args_new_alone)
-        fake_do_new.assert_called()
+        fake_do_new.assert_called_with(config=good_loaded_config)
+
+
+def test_when_action_is_send_it_should_send(args_send, good_loaded_config):
+    patch_send = mock.patch("wemail.send", autospec=True)
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_send as fake_send, patch_config:
+        wemail.do_it_two_it(args_send)
+        fake_send.assert_called_with(
+            config=good_loaded_config, mailfile=args_send.mailfile
+        )
+
+
+def test_when_action_is_send_all_it_should_send_all(args_send_all, good_loaded_config):
+    patch_send_all = mock.patch("wemail.send_all", autospec=True)
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_send_all as fake_send_all, patch_config:
+        wemail.do_it_two_it(args_send_all)
+        fake_send_all.assert_called_with(config=good_loaded_config)
+
+
+def test_when_action_is_check_it_should_check(args_check, good_loaded_config):
+    ...
+
+
+def test_when_action_is_reply_it_should_reply(args_reply, good_loaded_config):
+    ...
+
+
+def test_when_action_is_reply_all_it_should_reply_all(
+    args_reply_all, good_loaded_config
+):
+    ...
+
+
+def test_when_action_is_filter_it_should_filter(args_filter, good_loaded_config):
+    ...
+
+
+def test_when_action_is_update_it_should_update(args_update, good_loaded_config):
+    ...
+
+
+def test_when_version_is_passed_it_should_display_version(
+    args_version, good_loaded_config
+):
+    ...
 
 
 ########################

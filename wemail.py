@@ -71,6 +71,10 @@ def make_parser():
     )
     action_parser.set_defaults(action="new")
 
+    send_parser = subparsers.add_parser("send", help="Send specific email.")
+    send_parser.set_defaults(action="send")
+    send_parser.add_argument("mailfile")
+
     sendall_parser = subparsers.add_parser(
         "send_all", help="Send all emails in outbox."
     )
@@ -78,6 +82,19 @@ def make_parser():
 
     check_parser = subparsers.add_parser("check", help="Check for new email.")
     check_parser.set_defaults(action="check")
+
+    # TODO: update -W. Werner, 2019-11-20
+    subparsers.add_parser('update', help="Check for wemail updates.")
+
+    # TODO: filter -W. Werner, 2019-11-20
+    subparsers.add_parser('filter', help="Run filters against the inbox or specified folder.")
+
+    # TODO: rply_all -W. Werner, 2019-11-20
+    subparsers.add_parser('reply', help="Reply to reply-to or sender of an email.")
+
+    # TODO: rply_all -W. Werner, 2019-11-20
+    subparsers.add_parser('reply_all', help="Reply to all recipients of an email.")
+
     return parser
 
 
@@ -1427,6 +1444,14 @@ def send_all(*, config):
     print("Done!")
 
 
+def send(*, config, mailfile):
+    ...
+
+
+def do_reply(*, config, mailfile):
+    ...
+
+
 def load_config(config_file):
     config = json.load(config_file)
     if "" in config:
@@ -1438,6 +1463,7 @@ def load_config(config_file):
 
 
 def do_it_two_it(args):  # Shia LeBeouf!
+    print(args)
     if args.version:
         print(__version__)
         return
@@ -1446,18 +1472,20 @@ def do_it_two_it(args):  # Shia LeBeouf!
         ensure_maildirs_exist(maildir=config["maildir"])
         if args.action == "new":
             return do_new(config=config)
+        elif args.action == "send":
+            return send(config=config, mailfile=args.mailfile)
         elif args.action == "send_all":
             return send_all(config=config)
         elif args.action == "check":
             return do_check(config=config)
-        elif args.action == "filter":
-            ...
-        elif args.action == "update":
-            ...
         elif args.action == "reply":
-            ...
+            return do_reply(config=config, mailfile=args.mailfile)
         elif args.action == "reply_all":
-            ...
+            ...  # TODO
+        elif args.action == "filter":
+            ...  # TODO
+        elif args.action == "update":
+            ...  # TODO
         print("hai")
     except KeyboardInterrupt:
         print("\n^C caught, bye!")

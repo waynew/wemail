@@ -416,10 +416,12 @@ def test_when_do_check_is_called_it_should_move_all_files_from_new_to_cur(
         fname = maildir / "new" / f"message{i}.eml"
         fname.write_text("From: me\nTo: you\nSubject: OK\n\nOK?")
     expected_files = [file.name for file in (maildir / "new").iterdir()]
+    expected_files.sort()
 
     wemail.do_check(config=good_loaded_config)
 
     actual_files = [file.name for file in (maildir / "cur").iterdir()]
+    actual_files.sort()
 
     assert expected_files == actual_files
     assert expected_files != []

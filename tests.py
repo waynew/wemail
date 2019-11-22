@@ -135,14 +135,16 @@ def args_check(good_config):
 
 @pytest.fixture()
 def args_reply(good_config):
-    args = parser.parse_args(["reply"])
-    return args
+    with tempfile.NamedTemporaryFile() as f:
+        args = parser.parse_args(["reply", f.name])
+        yield args
 
 
 @pytest.fixture()
 def args_reply_all(good_config):
-    args = parser.parse_args(["reply_all"])
-    return args
+    with tempfile.NamedTemporaryFile() as f:
+        args = parser.parse_args(["reply_all", f.name])
+        yield args
 
 
 @pytest.fixture()
@@ -189,25 +191,44 @@ def test_when_action_is_send_all_it_should_send_all(args_send_all, good_loaded_c
 
 
 def test_when_action_is_check_it_should_check(args_check, good_loaded_config):
-    ...
+    patch_check_email = mock.patch("wemail.check_email", autospec=True)
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_check_email as fake_check, patch_config:
+        wemail.do_it_two_it(args_check)
+        fake_check.assert_called_with(config=good_loaded_config)
 
 
 def test_when_action_is_reply_it_should_reply(args_reply, good_loaded_config):
-    ...
+    patch_reply = mock.patch("wemail.reply", autospec=True)
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_reply as fake_reply, patch_config:
+        wemail.do_it_two_it(args_reply)
+        fake_reply.assert_called_with(config=good_loaded_config, mailfile=args_reply.mailfile)
 
 
 def test_when_action_is_reply_all_it_should_reply_all(
     args_reply_all, good_loaded_config
 ):
-    ...
+    patch_reply_all = mock.patch("wemail.reply_all", autospec=True)
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_reply_all as fake_reply_all, patch_config:
+        wemail.do_it_two_it(args_reply_all)
+        fake_reply_all.assert_called_with(config=good_loaded_config, mailfile=args_reply_all.mailfile)
 
 
 def test_when_action_is_filter_it_should_filter(args_filter, good_loaded_config):
-    ...
+    patch_filter = mock.patch("wemail.filter_messages", autospec=True)
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_filter as fake_filter, patch_config:
+        wemail.do_it_two_it(args_filter)
+        fake_filter.assert_called_with(config=good_loaded_config, folder=args_filter.folder)
 
 
-def test_when_action_is_update_it_should_update(args_update, good_loaded_config):
-    ...
+def test_when_action_is_update_it_should_update(args_update):
+    patch_update = mock.patch("wemail.update", autospec=True)
+    with patch_update as fake_update:
+        wemail.do_it_two_it(args_update)
+        fake_update.assert_called_with()
 
 
 def test_when_version_is_passed_it_should_display_version(
@@ -382,10 +403,10 @@ def test_ensure_maildirs_exist_should_create_proper_dirs():
 #####################
 
 
-def test_when_do_check_is_called_it_should_print_the_number_of_new_emails(
+def test_when_check_email_is_called_it_should_print_the_number_of_new_emails(
     capsys, good_loaded_config
 ):
-    wemail.do_check(config=good_loaded_config)
+    wemail.check_email(config=good_loaded_config)
 
     captured = capsys.readouterr()
     assert captured.out == "3 new messages.\n"
@@ -393,7 +414,7 @@ def test_when_do_check_is_called_it_should_print_the_number_of_new_emails(
     fname = good_loaded_config["maildir"] / "new" / f"message.eml"
     fname.write_text("From: me\nTo: you\nSubject: OK\n\nOK?")
 
-    wemail.do_check(config=good_loaded_config)
+    wemail.check_email(config=good_loaded_config)
 
     captured = capsys.readouterr()
     assert captured.out == "1 new message.\n"
@@ -402,13 +423,13 @@ def test_when_do_check_is_called_it_should_print_the_number_of_new_emails(
         fname = good_loaded_config["maildir"] / "new" / f"message{i}.eml"
         fname.write_text("From: me\nTo: you\nSubject: OK\n\nOK?")
 
-    wemail.do_check(config=good_loaded_config)
+    wemail.check_email(config=good_loaded_config)
 
     captured = capsys.readouterr()
     assert captured.out == "10 new messages.\n"
 
 
-def test_when_do_check_is_called_it_should_move_all_files_from_new_to_cur(
+def test_when_check_email_is_called_it_should_move_all_files_from_new_to_cur(
     good_loaded_config
 ):
     maildir = good_loaded_config["maildir"]
@@ -418,7 +439,7 @@ def test_when_do_check_is_called_it_should_move_all_files_from_new_to_cur(
     expected_files = [file.name for file in (maildir / "new").iterdir()]
     expected_files.sort()
 
-    wemail.do_check(config=good_loaded_config)
+    wemail.check_email(config=good_loaded_config)
 
     actual_files = [file.name for file in (maildir / "cur").iterdir()]
     actual_files.sort()

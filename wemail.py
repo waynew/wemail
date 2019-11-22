@@ -86,14 +86,21 @@ def make_parser():
     # TODO: update -W. Werner, 2019-11-20
     subparsers.add_parser('update', help="Check for wemail updates.")
 
-    # TODO: filter -W. Werner, 2019-11-20
-    subparsers.add_parser('filter', help="Run filters against the inbox or specified folder.")
+    filter_parser = subparsers.add_parser('filter', help="Run filters against the inbox or specified folder.")
+    filter_parser.set_defaults(action='filter')
+    filter_parser.add_argument('folder', nargs='?', help='Filter messages in inbox or specified folder.')
 
-    # TODO: rply_all -W. Werner, 2019-11-20
-    subparsers.add_parser('reply', help="Reply to reply-to or sender of an email.")
+    reply_parser = subparsers.add_parser('reply', help="Reply to reply-to or sender of an email.")
+    reply_parser.set_defaults(action='reply')
+    reply_parser.add_argument("mailfile")
 
-    # TODO: rply_all -W. Werner, 2019-11-20
-    subparsers.add_parser('reply_all', help="Reply to all recipients of an email.")
+
+    reply_all_parser = subparsers.add_parser('reply_all', help="Reply to all recipients of an email.")
+    reply_all_parser.set_defaults(action='reply_all')
+    reply_all_parser.add_argument("mailfile")
+
+    update_parser = subparsers.add_parser('update', help="Check for, and install updates.")
+    update_parser.set_defaults(action='update')
 
     return parser
 
@@ -1336,7 +1343,14 @@ def get_templates(*, dirname):
     return templates
 
 
-def do_check(config):
+def reply(*, config, mailfile):
+    ...
+
+
+def reply_all(*, config, mailfile):
+    ...
+
+def check_email(config):
     maildir = config["maildir"]
     curdir = maildir / "cur"
     newdir = maildir / "new"
@@ -1451,6 +1465,11 @@ def send(*, config, mailfile):
 def do_reply(*, config, mailfile):
     ...
 
+def filter_messages(*, config, folder=None):
+    ...
+
+def update():
+    ...
 
 def load_config(config_file):
     config = json.load(config_file)
@@ -1470,6 +1489,7 @@ def do_it_two_it(args):  # Shia LeBeouf!
     try:
         config = load_config(args.config)
         ensure_maildirs_exist(maildir=config["maildir"])
+        print(args)
         if args.action == "new":
             return do_new(config=config)
         elif args.action == "send":
@@ -1477,15 +1497,15 @@ def do_it_two_it(args):  # Shia LeBeouf!
         elif args.action == "send_all":
             return send_all(config=config)
         elif args.action == "check":
-            return do_check(config=config)
+            return check_email(config=config)
         elif args.action == "reply":
-            return do_reply(config=config, mailfile=args.mailfile)
+            return reply(config=config, mailfile=args.mailfile)
         elif args.action == "reply_all":
-            ...  # TODO
+            return reply_all(config=config, mailfile=args.mailfile)
         elif args.action == "filter":
-            ...  # TODO
+            return filter_messages(config=config, folder=args.folder)
         elif args.action == "update":
-            ...  # TODO
+            return update()
         print("hai")
     except KeyboardInterrupt:
         print("\n^C caught, bye!")

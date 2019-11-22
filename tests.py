@@ -10,8 +10,6 @@ import pytest
 import mistletoe
 
 import wemail
-
-from collections import namedtuple
 from email.mime.application import MIMEApplication
 from email.utils import getaddresses
 from unittest import mock
@@ -31,13 +29,31 @@ class MyHandler:
 parser = wemail.make_parser()
 
 
+@pytest.fixture()
+def sample_good_mailfile():
+    with tempfile.TemporaryDirectory() as dirname:
+        mailfile = pathlib.Path(dirname) / "test.eml"
+        mailfile.write_text(
+            textwrap.dedent(
+                """
+            From: Person Man <person@example.com>
+            To: Triangle Man <triangle@example.com>
+            Subject: why don't you like me?
+
+            I mean... you clearly don't - so why not?
+            """
+            ).strip()
+        )
+        yield mailfile
+
+
 @pytest.fixture(scope="module")
 def testdir():
     with tempfile.TemporaryDirectory() as dirname:
         yield dirname
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture()
 def test_server():
     try:
         handler = MyHandler()
@@ -203,7 +219,9 @@ def test_when_action_is_reply_it_should_reply(args_reply, good_loaded_config):
     patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
     with patch_reply as fake_reply, patch_config:
         wemail.do_it_two_it(args_reply)
-        fake_reply.assert_called_with(config=good_loaded_config, mailfile=args_reply.mailfile)
+        fake_reply.assert_called_with(
+            config=good_loaded_config, mailfile=args_reply.mailfile
+        )
 
 
 def test_when_action_is_reply_all_it_should_reply_all(
@@ -213,7 +231,9 @@ def test_when_action_is_reply_all_it_should_reply_all(
     patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
     with patch_reply_all as fake_reply_all, patch_config:
         wemail.do_it_two_it(args_reply_all)
-        fake_reply_all.assert_called_with(config=good_loaded_config, mailfile=args_reply_all.mailfile)
+        fake_reply_all.assert_called_with(
+            config=good_loaded_config, mailfile=args_reply_all.mailfile
+        )
 
 
 def test_when_action_is_filter_it_should_filter(args_filter, good_loaded_config):
@@ -221,7 +241,9 @@ def test_when_action_is_filter_it_should_filter(args_filter, good_loaded_config)
     patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
     with patch_filter as fake_filter, patch_config:
         wemail.do_it_two_it(args_filter)
-        fake_filter.assert_called_with(config=good_loaded_config, folder=args_filter.folder)
+        fake_filter.assert_called_with(
+            config=good_loaded_config, folder=args_filter.folder
+        )
 
 
 def test_when_action_is_update_it_should_update(args_update):
@@ -430,7 +452,7 @@ def test_when_check_email_is_called_it_should_print_the_number_of_new_emails(
 
 
 def test_when_check_email_is_called_it_should_move_all_files_from_new_to_cur(
-    good_loaded_config
+    good_loaded_config,
 ):
     maildir = good_loaded_config["maildir"]
     for i in range(5):
@@ -446,6 +468,23 @@ def test_when_check_email_is_called_it_should_move_all_files_from_new_to_cur(
 
     assert expected_files == actual_files
     assert expected_files != []
+
+
+def test_send_email_should_send_provided_email(sample_good_mailfile, test_server):
+    config = {
+        "SMTP_HOST": test_server.hostname,
+        "SMTP_PORT": test_server.port,
+    }
+
+    expected_message = wemail._parser.parsebytes(sample_good_mailfile.read_bytes())
+    wemail.send(config=config, mailfile=sample_good_mailfile)
+
+    actual_message = wemail._parser.parsebytes(test_server.handler.box[0].content)
+
+    for header in ("from", "to", "subject"):
+        assert actual_message[header] == expected_message[header]
+
+    assert actual_message.get_payload() == expected_message.get_payload()
 
 
 # Below here? Not sure what's what!
@@ -497,8 +536,13 @@ def test_default_headers_should_be_set_on_resulting_email(goodconfig):
 @pytest.mark.skip
 def test_creating_simple_email(test_server):
     with smtplib.SMTP(test_server.hostname, test_server.port) as smtp:
-        with wemail.Message(config={}) as draft:
-            draft.send(smtp)
+        from email.mime.text import MIMEText as e
+
+        msg = e("Hello worlds")
+        msg["From"] = "me@example.com"
+        msg["To"] = "you@example.com"
+        smtp.send_message(msg)
+        assert "" == dir(test_server.handler.box[0])
 
 
 def test_if_draft_exception_happens_draft_file_should_still_exist(testdir):
@@ -536,7 +580,7 @@ def test_if_draft_save_is_called_with_same_name_as_filename_it_should_stay(testd
 
 
 def test_if_draft_save_is_called_with_different_name_new_should_exist_old_should_be_gone(
-    testdir
+    testdir,
 ):
     with wemail.Message(draftdir=testdir) as draft:
         filename = draft.filename

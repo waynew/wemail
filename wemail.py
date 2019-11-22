@@ -84,23 +84,32 @@ def make_parser():
     check_parser.set_defaults(action="check")
 
     # TODO: update -W. Werner, 2019-11-20
-    subparsers.add_parser('update', help="Check for wemail updates.")
+    subparsers.add_parser("update", help="Check for wemail updates.")
 
-    filter_parser = subparsers.add_parser('filter', help="Run filters against the inbox or specified folder.")
-    filter_parser.set_defaults(action='filter')
-    filter_parser.add_argument('folder', nargs='?', help='Filter messages in inbox or specified folder.')
+    filter_parser = subparsers.add_parser(
+        "filter", help="Run filters against the inbox or specified folder."
+    )
+    filter_parser.set_defaults(action="filter")
+    filter_parser.add_argument(
+        "folder", nargs="?", help="Filter messages in inbox or specified folder."
+    )
 
-    reply_parser = subparsers.add_parser('reply', help="Reply to reply-to or sender of an email.")
-    reply_parser.set_defaults(action='reply')
+    reply_parser = subparsers.add_parser(
+        "reply", help="Reply to reply-to or sender of an email."
+    )
+    reply_parser.set_defaults(action="reply")
     reply_parser.add_argument("mailfile")
 
-
-    reply_all_parser = subparsers.add_parser('reply_all', help="Reply to all recipients of an email.")
-    reply_all_parser.set_defaults(action='reply_all')
+    reply_all_parser = subparsers.add_parser(
+        "reply_all", help="Reply to all recipients of an email."
+    )
+    reply_all_parser.set_defaults(action="reply_all")
     reply_all_parser.add_argument("mailfile")
 
-    update_parser = subparsers.add_parser('update', help="Check for, and install updates.")
-    update_parser.set_defaults(action='update')
+    update_parser = subparsers.add_parser(
+        "update", help="Check for, and install updates."
+    )
+    update_parser.set_defaults(action="update")
 
     return parser
 
@@ -1350,6 +1359,7 @@ def reply(*, config, mailfile):
 def reply_all(*, config, mailfile):
     ...
 
+
 def check_email(config):
     maildir = config["maildir"]
     curdir = maildir / "cur"
@@ -1459,17 +1469,30 @@ def send_all(*, config):
 
 
 def send(*, config, mailfile):
-    ...
+    msg = _parser.parsebytes(mailfile.read_bytes())
+    # print(f'Sending {msg["subject"]!r} to {msg["to"]}')
+    send_message(
+        msg=msg,
+        smtp_host=config.get("SMTP_HOST", "localhost"),
+        smtp_port=config.get("SMTP_PORT", 25),
+        use_tls=config.get("SMTP_USE_TLS", False),
+        use_smtps=config.get("SMTP_USE_SMTPS", False),
+        username=config.get("SMTP_USERNAME", False),
+        password=config.get("SMTP_PASSWORD", False),
+    )
 
 
 def do_reply(*, config, mailfile):
     ...
 
+
 def filter_messages(*, config, folder=None):
     ...
 
+
 def update():
     ...
+
 
 def load_config(config_file):
     config = json.load(config_file)

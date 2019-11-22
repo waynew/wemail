@@ -501,6 +501,51 @@ def test_send_should_display_sending_status(capsys, sample_good_mailfile):
     assert captured.out == expected_message
 
 
+def test_send_should_override_defaults_with_account_settings_from_config(
+    sample_good_mailfile,
+):
+    expected_host = "goodhost"
+    expected_port = 0xC00D
+    expected_use_tls = True
+    expected_use_smtps = True
+    expected_username = "goodboy"
+    expected_password = "CorrectHorseBatteryStaple"
+    config = {
+        "SMTP_HOST": "bad bad bad",
+        "SMTP_PORT": 0xBADBAD,
+        "SMTP_USE_TLS": "Bad no good override",
+        "SMTP_USE_SMTPS": "Bad no good override",
+        "SMTP_USERNAME": "Bad no good override",
+        "SMTP_PASSWORD": "Bad no good override",
+        "person@example.com": {
+            "SMTP_HOST": expected_host,
+            "SMTP_PORT": expected_port,
+            "SMTP_USE_TLS": expected_use_tls,
+            "SMTP_USE_SMTPS": expected_use_smtps,
+            "SMTP_USERNAME": expected_username,
+            "SMTP_PASSWORD": expected_password,
+        },
+    }
+    email = wemail._parser.parsebytes(sample_good_mailfile.read_bytes())
+    mock_parser = mock.patch(
+        "wemail._parser.parsebytes", mock.MagicMock(return_value=email)
+    )
+    with mock.patch(
+        "wemail.send_message", autospec=True
+    ) as fake_send_message, mock_parser:
+        wemail.send(config=config, mailfile=sample_good_mailfile)
+
+        fake_send_message.assert_called_with(
+            msg=email,
+            smtp_host=expected_host,
+            smtp_port=expected_port,
+            use_tls=expected_use_tls,
+            use_smtps=expected_use_smtps,
+            username=expected_username,
+            password=expected_password,
+        )
+
+
 # Below here? Not sure what's what!
 ###########################
 

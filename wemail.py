@@ -1470,6 +1470,10 @@ def send_all(*, config):
 
 def send(*, config, mailfile):
     msg = _parser.parsebytes(mailfile.read_bytes())
+    from_addr = parseaddr(msg["from"])[1]
+    config = config.copy()
+    if from_addr in config:
+        config.update(config[from_addr])
     print(f'Sending {msg["subject"]!r} to {msg["to"]}')
     send_message(
         msg=msg,

@@ -1470,7 +1470,7 @@ def send_all(*, config):
 
 def send(*, config, mailfile):
     msg = _parser.parsebytes(mailfile.read_bytes())
-    # print(f'Sending {msg["subject"]!r} to {msg["to"]}')
+    print(f'Sending {msg["subject"]!r} to {msg["to"]}')
     send_message(
         msg=msg,
         smtp_host=config.get("SMTP_HOST", "localhost"),
@@ -1480,6 +1480,7 @@ def send(*, config, mailfile):
         username=config.get("SMTP_USERNAME", False),
         password=config.get("SMTP_PASSWORD", False),
     )
+    print("Done!")
 
 
 def do_reply(*, config, mailfile):

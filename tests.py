@@ -487,6 +487,20 @@ def test_send_email_should_send_provided_email(sample_good_mailfile, test_server
     assert actual_message.get_payload() == expected_message.get_payload()
 
 
+def test_send_should_display_sending_status(capsys, sample_good_mailfile):
+    expected_message = (
+        'Sending "why don\'t you like me?" to Triangle Man <triangle@example.com>'
+        "\n"
+        "Done!"
+        "\n"
+    )
+    with mock.patch("wemail.send_message", autospec=True):
+        wemail.send(config={}, mailfile=sample_good_mailfile)
+
+    captured = capsys.readouterr()
+    assert captured.out == expected_message
+
+
 # Below here? Not sure what's what!
 ###########################
 

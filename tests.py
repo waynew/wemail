@@ -546,6 +546,42 @@ def test_send_should_override_defaults_with_account_settings_from_config(
         )
 
 
+def test_when_commonmark_header_is_present_it_should_render_message(
+    sample_good_mailfile,
+):
+    sample_good_mailfile.write_text(
+        textwrap.dedent(
+            """
+        From: test@example.com
+        To: test@example.com
+        X-CommonMark: True
+        Subject: Testing
+
+        *bold* text
+        """
+        ).strip()
+    )
+    expected_msg = "Not really rendered"
+    patch_send_message = mock.patch(
+        "wemail.send_message", mock.MagicMock(return_value=expected_msg)
+    )
+
+    with mock.patch(
+        "wemail.commonmarkdown", autospec=True
+    ) as fakemarkdown, patch_send_message as fake_sm:
+        wemail.send(config={}, mailfile=sample_good_mailfile)
+        fakemarkdown.assert_called()
+        fake_sm.assert_called_with(
+            msg=expected_msg,
+            smtp_host=mock.ANY,
+            smtp_port=mock.ANY,
+            use_tls=mock.ANY,
+            use_smtps=mock.ANY,
+            username=mock.ANY,
+            password=mock.ANY,
+        )
+
+
 # Below here? Not sure what's what!
 ###########################
 

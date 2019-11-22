@@ -73,7 +73,7 @@ def make_parser():
 
     send_parser = subparsers.add_parser("send", help="Send specific email.")
     send_parser.set_defaults(action="send")
-    send_parser.add_argument("mailfile")
+    send_parser.add_argument("mailfile", type=Path)
 
     sendall_parser = subparsers.add_parser(
         "send_all", help="Send all emails in outbox."
@@ -1374,9 +1374,10 @@ def check_email(config):
 
 def do_new(config):
     maildir = config["maildir"]
-    templates = get_templates(dirname=maildir / "templates")
+    template_dir = maildir / "templates"
+    templates = get_templates(dirname=template_dir)
     if not templates:
-        print(f"No templates. Add some to {templates} and try again")
+        print(f"No templates. Add some to {template_dir} and try again")
         return
     for i, template in enumerate(templates, start=1):
         print(f"{i}. {template.name}")
@@ -1474,6 +1475,8 @@ def send(*, config, mailfile):
     config = config.copy()
     if from_addr in config:
         config.update(config[from_addr])
+    if msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
+        msg = commonmarkdown(msg)
     print(f'Sending {msg["subject"]!r} to {msg["to"]}')
     send_message(
         msg=msg,
@@ -1510,14 +1513,12 @@ def load_config(config_file):
 
 
 def do_it_two_it(args):  # Shia LeBeouf!
-    print(args)
     if args.version:
         print(__version__)
         return
     try:
         config = load_config(args.config)
         ensure_maildirs_exist(maildir=config["maildir"])
-        print(args)
         if args.action == "new":
             return do_new(config=config)
         elif args.action == "send":

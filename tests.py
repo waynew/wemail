@@ -488,12 +488,8 @@ def test_send_email_should_send_provided_email(sample_good_mailfile, test_server
 
 
 def test_send_should_display_sending_status(capsys, sample_good_mailfile):
-    expected_message = (
-        'Sending "why don\'t you like me?" to Triangle Man <triangle@example.com>'
-        "\n"
-        "Done!"
-        "\n"
-    )
+    expected_message = 'Sending "why don\'t you like me?" to Triangle Man <triangle@example.com> ... OK\n'
+
     with mock.patch("wemail.send_message", autospec=True):
         wemail.send(config={}, mailfile=sample_good_mailfile)
 
@@ -552,34 +548,23 @@ def test_when_commonmark_header_is_present_it_should_render_message(
     sample_good_mailfile.write_text(
         textwrap.dedent(
             """
-        From: test@example.com
-        To: test@example.com
-        X-CommonMark: True
-        Subject: Testing
+            From: test@example.com
+            To: test@example.com
+            X-CommonMark: True
+            Subject: Testing
 
-        *bold* text
-        """
+            *bold* text
+            """
         ).strip()
     )
-    expected_msg = "Not really rendered"
-    patch_send_message = mock.patch(
-        "wemail.send_message", mock.MagicMock(return_value=expected_msg)
-    )
+    message = wemail._parser.parsebytes(sample_good_mailfile.read_bytes())
+    patch_send_message = mock.patch("wemail.send_message")
 
     with mock.patch(
-        "wemail.commonmarkdown", autospec=True
+        "wemail.commonmarkdown", autospec=True, return_value=message
     ) as fakemarkdown, patch_send_message as fake_sm:
         wemail.send(config={}, mailfile=sample_good_mailfile)
         fakemarkdown.assert_called()
-        fake_sm.assert_called_with(
-            msg=expected_msg,
-            smtp_host=mock.ANY,
-            smtp_port=mock.ANY,
-            use_tls=mock.ANY,
-            use_smtps=mock.ANY,
-            username=mock.ANY,
-            password=mock.ANY,
-        )
 
 
 # Below here? Not sure what's what!

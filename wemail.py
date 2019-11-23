@@ -1477,7 +1477,7 @@ def send(*, config, mailfile):
         config.update(config[from_addr])
     if msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
         msg = commonmarkdown(msg)
-    print(f'Sending {msg["subject"]!r} to {msg["to"]}')
+    print(f'Sending {msg["subject"]!r} to {msg["to"]} ... ', end="")
     send_message(
         msg=msg,
         smtp_host=config.get("SMTP_HOST", "localhost"),
@@ -1487,7 +1487,7 @@ def send(*, config, mailfile):
         username=config.get("SMTP_USERNAME", False),
         password=config.get("SMTP_PASSWORD", False),
     )
-    print("Done!")
+    print("OK")
 
 
 def do_reply(*, config, mailfile):

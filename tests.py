@@ -138,6 +138,13 @@ def args_send(good_config):
 
 
 @pytest.fixture()
+def args_list(good_config):
+    args = parser.parse_args(["list"])
+    args.config = good_config
+    return args
+
+
+@pytest.fixture()
 def args_send_all(good_config):
     args = parser.parse_args(["send_all"])
     return args
@@ -251,6 +258,13 @@ def test_when_action_is_update_it_should_update(args_update):
     with patch_update as fake_update:
         wemail.do_it_two_it(args_update)
         fake_update.assert_called_with()
+
+
+def test_when_action_is_list_it_should_list(args_list):
+    patch_list = mock.patch("wemail.list_messages", autospec=True)
+    with patch_list as fake_list:
+        wemail.do_it_two_it(args_list)
+        fake_list.assert_called_with(config=args_list.config)
 
 
 def test_when_version_is_passed_it_should_display_version(

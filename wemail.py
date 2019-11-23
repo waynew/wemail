@@ -98,7 +98,7 @@ def make_parser():
         "reply", help="Reply to reply-to or sender of an email."
     )
     reply_parser.set_defaults(action="reply")
-    reply_parser.add_argument("mailfile")
+    reply_parser.add_argument("mailfile", type=Path)
 
     reply_all_parser = subparsers.add_parser(
         "reply_all", help="Reply to all recipients of an email."
@@ -110,6 +110,11 @@ def make_parser():
         "update", help="Check for, and install updates."
     )
     update_parser.set_defaults(action="update")
+
+    list_parser = subparsers.add_parser(
+        "list", help="List the messages - date, sender, and subject."
+    )
+    list_parser.set_defaults(action="list")
 
     return parser
 
@@ -1353,11 +1358,18 @@ def get_templates(*, dirname):
 
 
 def reply(*, config, mailfile):
-    ...
+    msg = _parser.parsebytes(mailfile.read_bytes())
+    msg = replyify(msg=msg, sender=msg["from"])
+    draft = create_draft(template=str(msg), config=config)
+    subprocess.call([config["EDITOR"], draft])
+    choice = action_prompt()
 
 
 def reply_all(*, config, mailfile):
-    ...
+    msg = _parser.parsebytes(mailfile.read_bytes())
+    msg = replyify(msg=msg, sender=msg["from"], reply_all=True)
+    subprocess.call([config["EDITOR"], draft])
+    choice = action_prompt()
 
 
 def check_email(config):
@@ -1490,6 +1502,10 @@ def send(*, config, mailfile):
     print("OK")
 
 
+def list_messages(*, config):
+    ...
+
+
 def do_reply(*, config, mailfile):
     ...
 
@@ -1535,6 +1551,8 @@ def do_it_two_it(args):  # Shia LeBeouf!
             return filter_messages(config=config, folder=args.folder)
         elif args.action == "update":
             return update()
+        elif args.action == "list":
+            return list_messages(config=config)
         print("hai")
     except KeyboardInterrupt:
         print("\n^C caught, bye!")

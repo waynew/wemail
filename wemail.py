@@ -1503,7 +1503,17 @@ def send(*, config, mailfile):
 
 
 def list_messages(*, config):
-    ...
+    maildir = config["maildir"] / "cur"
+    for file in maildir.iterdir():
+        f = file.resolve()
+        if not file.resolve().is_file():
+            continue
+        msg = _parser.parsebytes(file.read_bytes())
+        date = parsedate_to_datetime(msg["Date"])
+        subject = msg["subject"]
+        # TODO: There are a number of headers this could be -W. Werner, 2019-11-22
+        sender = msg["from"] or msg["sender"]
+        print(f"{date:%Y-%m-%d %H:%M} - {sender} - {subject}")
 
 
 def do_reply(*, config, mailfile):

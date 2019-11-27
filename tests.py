@@ -260,11 +260,12 @@ def test_when_action_is_update_it_should_update(args_update):
         fake_update.assert_called_with()
 
 
-def test_when_action_is_list_it_should_list(args_list):
+def test_when_action_is_list_it_should_list(args_list, good_loaded_config):
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
     patch_list = mock.patch("wemail.list_messages", autospec=True)
-    with patch_list as fake_list:
+    with patch_list as fake_list, patch_config:
         wemail.do_it_two_it(args_list)
-        fake_list.assert_called_with(config=args_list.config)
+        fake_list.assert_called_with(config=good_loaded_config)
 
 
 def test_when_version_is_passed_it_should_display_version(

@@ -29,6 +29,9 @@ class MyHandler:
 parser = wemail.make_parser()
 
 
+# {{{ Fixtures
+
+
 @pytest.fixture()
 def sample_good_mailfile():
     with tempfile.TemporaryDirectory() as dirname:
@@ -98,8 +101,12 @@ def temp_maildir():
         newmail_dir = dirp / "new"
         for i in range(1, 4):
             fname = newmail_dir / f"message{i}.eml"
+            if i == 3:
+                date_header = "Date: Mon, 14 Aug 2010 13:32:02 +0100\n"
+            else:
+                date_header = ""
             fname.write_text(
-                """From: person.man@example.com\nTo: triangle.man@example.com\nSubject: I hate you\n\nLet's have a fight!"""
+                f"""{date_header}From: person.man@example.com\nTo: triangle.man@example.com\nSubject: I hate you\n\nLet's have a fight!"""
             )
         yield dirname
 
@@ -140,6 +147,13 @@ def args_send(good_config):
 @pytest.fixture()
 def args_list(good_config):
     args = parser.parse_args(["list"])
+    args.config = good_config
+    return args
+
+
+@pytest.fixture()
+def args_read(good_config):
+    args = parser.parse_args(["read", "1"])
     args.config = good_config
     return args
 
@@ -186,6 +200,11 @@ def args_update(good_config):
 def args_version(good_config):
     args = parser.parse_args(["--version"])
     return args
+
+
+# end fixtures }}}
+
+# {{{ action tests
 
 
 def test_when_action_is_new_it_should_do_new(args_new_alone, good_loaded_config):
@@ -268,15 +287,37 @@ def test_when_action_is_list_it_should_list(args_list, good_loaded_config):
         fake_list.assert_called_with(config=good_loaded_config)
 
 
+def test_when_action_is_read_it_should_read(args_read, good_loaded_config):
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    patch_read = mock.patch("wemail.read", autospec=True)
+    with patch_read as fake_read, patch_config:
+        wemail.do_it_two_it(args_read)
+        fake_read.assert_called_with(
+            config=good_loaded_config,
+            mailnumber=args_read.mailnumber,
+            all_headers=args_read.all_headers,
+        )
+
+
 def test_when_version_is_passed_it_should_display_version(
-    args_version, good_loaded_config
+    capsys, args_version, good_loaded_config
 ):
-    ...
+    wemail.do_it_two_it(args_version)
+    captured = capsys.readouterr()
+    assert captured.out == f"{wemail.__version__}\n"
 
 
-########################
-# Start Template Tests #
-########################
+def test_when_no_action_is_on_args_it_should_get_help():
+    with pytest.raises(SystemExit):
+        wemail.do_it_now([])
+
+
+# end action test }}}
+
+
+######################
+# {{{ Template Tests #
+######################
 
 
 def test_get_templates_with_empty_dir_should_return_no_templates():
@@ -346,13 +387,13 @@ def test_get_templates_with_multiple_templates_should_return_templates():
         assert actual_templates == expected_templates
 
 
-######################
-# End Template Tests #
-######################
+########################
+# End Template Tests }}}
+########################
 
 
 ############################
-# Start Create Draft Tests #
+# {{{ Create Draft Tests #
 ############################
 
 
@@ -398,11 +439,6 @@ def test_create_drafts_should_use_created_filename():
         assert (drafts / expected_name).read_text() == template
 
 
-##########################
-# End Create Draft Tests #
-##########################
-
-
 def test_make_draftname_should_be_combination_of_the_current_timestamp_and_subject():
     subject = "Something Cool"
     expected_draftname = "20100824000000-Something-Cool.eml"
@@ -413,8 +449,13 @@ def test_make_draftname_should_be_combination_of_the_current_timestamp_and_subje
     assert actual_draftname == expected_draftname
 
 
+##########################
+# End Create Draft Tests }}}
+##########################
+
+
 ########################
-# Create maildir tests #
+# {{{ Maildir tests #
 ########################
 
 
@@ -431,13 +472,12 @@ def test_ensure_maildirs_exist_should_create_proper_dirs():
 
 
 #####################
-# End maildir tests #
+# End maildir tests }}}
 #####################
 
 
-#####################
-# Check email tests #
-#####################
+# {{{ Check email tests
+######################
 
 
 def test_when_check_email_is_called_it_should_print_the_number_of_new_emails(
@@ -485,11 +525,41 @@ def test_when_check_email_is_called_it_should_move_all_files_from_new_to_cur(
     assert expected_files != []
 
 
+# End Check email tests }}}
+
+# {{{ Read email tests
+
+
+def test_simple_single_mail_should_fire_external_viewer_with_email(good_loaded_config):
+    wemail.check_email(good_loaded_config)
+    msg = next(wemail.iter_messages(maildir=good_loaded_config["maildir"] / "cur"))
+    with mock.patch("subprocess.run", autospec=True) as fake_run:
+        wemail.read(config=good_loaded_config, mailnumber=1)
+        fake_run.assert_called_with([good_loaded_config["EDITOR"], mock.ANY])
+
+
+def test_list_should_list_the_messages(capsys, good_loaded_config):
+    expected_message = (
+        " 1. Unknown          - person.man@example.com - I hate you\n"
+        " 2. 2010-08-14 13:32 - person.man@example.com - I hate you\n"
+        " 3. Unknown          - person.man@example.com - I hate you\n"
+    )
+    wemail.check_email(good_loaded_config)
+    capsys.readouterr()
+
+    wemail.list_messages(config=good_loaded_config)
+    captured = capsys.readouterr()
+
+    assert captured.out == expected_message
+
+
+# End read email tests }}}
+
+# {{{ Send email tests
+
+
 def test_send_email_should_send_provided_email(sample_good_mailfile, test_server):
-    config = {
-        "SMTP_HOST": test_server.hostname,
-        "SMTP_PORT": test_server.port,
-    }
+    config = {"SMTP_HOST": test_server.hostname, "SMTP_PORT": test_server.port}
 
     expected_message = wemail._parser.parsebytes(sample_good_mailfile.read_bytes())
     wemail.send(config=config, mailfile=sample_good_mailfile)
@@ -557,6 +627,12 @@ def test_send_should_override_defaults_with_account_settings_from_config(
         )
 
 
+# End send meessages }}}
+
+
+# {{{ Custom header tests
+
+
 def test_when_commonmark_header_is_present_it_should_render_message(
     sample_good_mailfile,
 ):
@@ -582,7 +658,9 @@ def test_when_commonmark_header_is_present_it_should_render_message(
         fakemarkdown.assert_called()
 
 
-# Below here? Not sure what's what!
+# End custom header tests }}}
+
+# {{{ Below here? Not sure what's what!
 ###########################
 
 
@@ -886,3 +964,6 @@ def test_forwardify_should_strip_attachments_if_keep_is_False():
 
     with pytest.raises(StopIteration):
         next(msg.iter_attachments())
+
+
+# }}}

@@ -3,6 +3,7 @@ import ast
 import collections
 import io
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -36,22 +37,27 @@ from itertools import chain
 from pathlib import Path
 from textwrap import dedent
 
+log = logging.getLogger("wemail")
+
 try:
     from mistletoe import markdown as commonmark
-except ImportError as e:
+
+    log.debug("Got mistletoe")
+except ImportError as e:  # pragma: no cover
     try:
         from commonmark import commonmark
 
-        print("Got commonmark")
+        log.debug("Got commonmark")
     except ImportError:
         commonmark = None
 
-__version__ = "0.2.0"
+__version__ = "0.3.0b0"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
 SKIPPED_HEADERS = ("To", "Cc", "DKIM-Signature", "Message-ID", "Subject")
 DEFAULT_HEADERS = {"From": "", "To": "", "Subject": ""}
+DISPLAY_HEADERS = ("From", "To", "CC", "Reply-to", "List-Id", "Subject")
 EmailTemplate = collections.namedtuple("EmailTemplate", "name,content")
 
 
@@ -83,9 +89,6 @@ def make_parser():
     check_parser = subparsers.add_parser("check", help="Check for new email.")
     check_parser.set_defaults(action="check")
 
-    # TODO: update -W. Werner, 2019-11-20
-    subparsers.add_parser("update", help="Check for wemail updates.")
-
     filter_parser = subparsers.add_parser(
         "filter", help="Run filters against the inbox or specified folder."
     )
@@ -115,6 +118,14 @@ def make_parser():
         "list", help="List the messages - date, sender, and subject."
     )
     list_parser.set_defaults(action="list")
+
+    # TODO: It would be pretty cool to have capability to read emails in different viewer, like html open in a browser -W. Werner, 2019-12-06
+    read_parser = subparsers.add_parser("read", help="Read a single message")
+    read_parser.set_defaults(action="read")
+    read_parser.add_argument("mailnumber", type=int)
+    read_parser.add_argument(
+        "--all-headers", help="Provide all headers instead of a limited set."
+    )
 
     return parser
 
@@ -1358,6 +1369,11 @@ def get_templates(*, dirname):
 
 
 def reply(*, config, mailfile):
+    if mailfile.name.isdigit():
+        curmaildir = config["maildir"] / "cur"
+        mailfile = Path(
+            list(f for f in curmaildir.iterdir() if f.is_file())[int(mailfile.name) - 1]
+        )
     msg = _parser.parsebytes(mailfile.read_bytes())
     msg = replyify(msg=msg, sender=msg["from"])
     draft = create_draft(template=str(msg), config=config)
@@ -1502,20 +1518,64 @@ def send(*, config, mailfile):
     print("OK")
 
 
+def iter_messages(*, maildir):
+    """
+    Iterate over the messages in maildir, yielding each parsed message.
+    """
+    msg_list = [file for file in maildir.iterdir() if file.is_file()]
+    for file in msg_list:
+        msg = _parser.parsebytes(file.read_bytes())
+        yield msg
+
+
 def list_messages(*, config):
     maildir = config["maildir"] / "cur"
-    msg_list = [file for file in maildir.iterdir() if file.is_file()]
-    for i, file in enumerate(msg_list, start=1):
-        msg = _parser.parsebytes(file.read_bytes())
-        date = parsedate_to_datetime(msg["Date"])
+    for i, msg in enumerate(iter_messages(maildir=maildir), start=1):
+        if "date" in msg:
+            date = parsedate_to_datetime(msg["date"])
+            date_str = f"{date:%Y-%m-%d %H:%M}"
+        else:
+            date_str = f"{'Unknown':<16}"
         subject = msg["subject"]
         # TODO: There are a number of headers this could be -W. Werner, 2019-11-22
         sender = msg["from"] or msg["sender"]
-        print(f"{i:>2}. {date:%Y-%m-%d %H:%M} - {sender} - {subject}")
+        print(f"{i:>2}. {date_str} - {sender} - {subject}")
 
 
-def do_reply(*, config, mailfile):
-    ...
+def read(*, config, mailnumber, all_headers=False, part=None):
+    message_iter = iter_messages(maildir=config["maildir"] / "cur")
+    # TODO: This works but it doesn't have comprehensive test coverage -W. Werner, 2019-12-06
+    # Also there is another issue. If there is a part with a filename, we should try and respect that filename. This should kind of get unwound. Also it's not super effective
+    # to go parsing all of the emails *shrugs*
+    for i, msg in zip(range(mailnumber), message_iter):
+        pass
+    with tempfile.NamedTemporaryFile(suffix=".eml") as tempmail:
+        if all_headers:
+            tempmail.write(msg.as_bytes().split(b"\n\n")[0])
+        else:
+            for header in DISPLAY_HEADERS:
+                if header in msg:
+                    tempmail.write(f"{header}: {msg[header]}\n".encode())
+
+        tempmail.write(b"\n\n")
+
+        if not msg.is_multipart():
+            tempmail.write(msg.get_payload(decode=True))
+        else:
+            parts = []
+            i = 1
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                if content_type.startswith("multipart/"):
+                    print(content_type)
+                else:
+                    parts.append(part)
+                    print(f"\t{i}. {content_type}")
+                    i += 1
+            part = parts[int(input("What part?")) - 1]
+            tempmail.write(part.get_payload(decode=True))
+        tempmail.flush()
+        subprocess.run([config["EDITOR"], tempmail.name])
 
 
 def filter_messages(*, config, folder=None):
@@ -1561,12 +1621,21 @@ def do_it_two_it(args):  # Shia LeBeouf!
             return update()
         elif args.action == "list":
             return list_messages(config=config)
-        print("hai")
+        elif args.action == "read":
+            return read(
+                config=config, mailnumber=args.mailnumber, all_headers=args.all_headers
+            )
     except KeyboardInterrupt:
         print("\n^C caught, bye!")
 
 
-if __name__ == "__main__":
+def do_it_now(argv=None):
     parser = make_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if not args.version and "action" not in args:
+        parser.exit(message=parser.format_help())
     do_it_two_it(args)
+
+
+if __name__ == "__main__":
+    do_it_now()

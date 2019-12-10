@@ -1368,24 +1368,19 @@ def get_templates(*, dirname):
     return templates
 
 
-def reply(*, config, mailfile):
+def reply(*, config, mailfile, reply_all=True):
     if mailfile.name.isdigit():
         curmaildir = config["maildir"] / "cur"
         mailfile = Path(
             list(f for f in curmaildir.iterdir() if f.is_file())[int(mailfile.name) - 1]
         )
     msg = _parser.parsebytes(mailfile.read_bytes())
-    msg = replyify(msg=msg, sender=msg["from"])
+    msg = replyify(msg=msg, sender=msg["from"], reply_all=reply_all)
     draft = create_draft(template=str(msg), config=config)
     subprocess.call([config["EDITOR"], draft])
     choice = action_prompt()
-
-
-def reply_all(*, config, mailfile):
-    msg = _parser.parsebytes(mailfile.read_bytes())
-    msg = replyify(msg=msg, sender=msg["from"], reply_all=True)
-    subprocess.call([config["EDITOR"], draft])
-    choice = action_prompt()
+    if choice == "s":
+        send(config=config, mailfile=mailfile)
 
 
 def check_email(config):
@@ -1498,6 +1493,7 @@ def send_all(*, config):
 
 
 def send(*, config, mailfile):
+    sentfile = config["maildir"] / "sent" / mailfile.name
     msg = _parser.parsebytes(mailfile.read_bytes())
     from_addr = parseaddr(msg["from"])[1]
     config = config.copy()
@@ -1515,6 +1511,8 @@ def send(*, config, mailfile):
         username=config.get("SMTP_USERNAME", False),
         password=config.get("SMTP_PASSWORD", False),
     )
+    sentfile.parent.mkdir(parents=True, exist_ok=True)
+    mailfile.rename(sentfile)
     print("OK")
 
 
@@ -1614,7 +1612,7 @@ def do_it_two_it(args):  # Shia LeBeouf!
         elif args.action == "reply":
             return reply(config=config, mailfile=args.mailfile)
         elif args.action == "reply_all":
-            return reply_all(config=config, mailfile=args.mailfile)
+            return reply(config=config, mailfile=args.mailfile, reply_all=True)
         elif args.action == "filter":
             return filter_messages(config=config, folder=args.folder)
         elif args.action == "update":

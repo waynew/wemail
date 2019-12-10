@@ -13,9 +13,9 @@ import subprocess
 import sys
 import tempfile
 import time
-
 from cmd import Cmd
 from datetime import datetime
+from datetime import timezone
 from email.header import decode_header
 from email.message import EmailMessage
 from email.mime.application import MIMEApplication
@@ -23,15 +23,14 @@ from email.mime.audio import MIMEAudio
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.parser import BytesHeaderParser
 from email.parser import BytesParser
 from email.policy import EmailPolicy
-from email.utils import (
-    getaddresses,
-    formatdate,
-    parsedate_to_datetime,
-    formataddr,
-    parseaddr,
-)
+from email.utils import formataddr
+from email.utils import formatdate
+from email.utils import getaddresses
+from email.utils import parseaddr
+from email.utils import parsedate_to_datetime
 from getpass import getuser
 from itertools import chain
 from pathlib import Path
@@ -55,10 +54,12 @@ __version__ = "0.3.0b2"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
+_header_parser = BytesHeaderParser(policy=POLICY)
 SKIPPED_HEADERS = ("To", "Cc", "DKIM-Signature", "Message-ID", "Subject")
 DEFAULT_HEADERS = {"From": "", "To": "", "Subject": ""}
 DISPLAY_HEADERS = ("From", "To", "CC", "Reply-to", "List-Id", "Subject")
 EmailTemplate = collections.namedtuple("EmailTemplate", "name,content")
+LOCAL_TZ = datetime.now(timezone.utc).astimezone().tzinfo
 
 
 def make_parser():
@@ -1477,18 +1478,7 @@ def send_all(*, config):
         print("Aborted!")
         return
     for mailfile in to_send:
-        msg = _parser.parsebytes(mailfile.read_bytes())
-        print(f'Sending {msg["subject"]!r} to {msg["to"]}')
-        send_message(
-            msg=msg,
-            smtp_host=config.get("SMTP_HOST", "localhost"),
-            smtp_port=config.get("SMTP_PORT", 25),
-            use_tls=config.get("SMTP_USE_TLS", False),
-            use_smtps=config.get("SMTP_USE_SMTPS", False),
-            username=config.get("SMTP_USERNAME", False),
-            password=config.get("SMTP_PASSWORD", False),
-        )
-        mailfile.rename(sentdir / mailfile.name)
+        send(config=config, mailfile=mailfile)
     print("Done!")
 
 
@@ -1499,9 +1489,9 @@ def send(*, config, mailfile):
     config = config.copy()
     if from_addr in config:
         config.update(config[from_addr])
-    if msg.get("X-CommonMark", "").lower() in ("yes", "y", "true", "1"):
-        msg = commonmarkdown(msg)
     print(f'Sending {msg["subject"]!r} to {msg["to"]} ... ', end="")
+    msg = commonmarkdown(msg)
+    msg = attachify(msg)
     send_message(
         msg=msg,
         smtp_host=config.get("SMTP_HOST", "localhost"),
@@ -1516,11 +1506,22 @@ def send(*, config, mailfile):
     print("OK")
 
 
+def get_msg_date(file):
+    file = Path(file)
+    with file.open("rb") as f:
+        headers = _header_parser.parse(f)
+    msg_timestamp = datetime.fromtimestamp(file.stat().st_mtime, LOCAL_TZ)
+    if headers["date"]:
+        msg_timestamp = parsedate_to_datetime(headers["date"])
+    return msg_timestamp
+
+
 def iter_messages(*, maildir):
     """
     Iterate over the messages in maildir, yielding each parsed message.
     """
     msg_list = [file for file in maildir.iterdir() if file.is_file()]
+    msg_list.sort(key=get_msg_date)
     for file in msg_list:
         msg = _parser.parsebytes(file.read_bytes())
         yield msg

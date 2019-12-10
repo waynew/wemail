@@ -472,6 +472,28 @@ def test_ensure_maildirs_exist_should_create_proper_dirs():
         assert (maildir / "sent").exists()
 
 
+def test_files_should_be_sorted_in_date_header_order():
+    with tempfile.TemporaryDirectory() as dirname:
+        maildir = pathlib.Path(dirname)
+        wemail.ensure_maildirs_exist(maildir=maildir)
+        dates = (
+            "Date: Mon, 14 Aug 2010 13:32:02 +0100\nSubject: Second\n\n",
+            "Date: Mon, 14 Aug 2011 13:32:02 +0100\nSubject: Third\n\n",
+            "Date: Mon, 26 Aug 1984 13:32:02 +0100\nSubject: First\n\n",
+        )
+        expected_order = ("First", "Second", "Third")
+
+        for i, date in enumerate(dates):
+            filename = maildir / "new" / f"file_{i}.eml"
+            filename.write_text(date)
+
+        actual_order = tuple(
+            msg["subject"] for msg in wemail.iter_messages(maildir=maildir / "new")
+        )
+
+        assert actual_order == expected_order
+
+
 #####################
 # End maildir tests }}}
 #####################
@@ -539,12 +561,11 @@ def test_simple_single_mail_should_fire_external_viewer_with_email(good_loaded_c
         fake_run.assert_called_with([good_loaded_config["EDITOR"], mock.ANY])
 
 
-@pytest.mark.skip  # TODO need to write an iter function that uses date or fallback to file timestamp
 def test_list_should_list_the_messages(capsys, good_loaded_config):
     expected_message = (
-        " 1. Unknown          - person.man@example.com - I hate you\n"
+        " 1. 2010-08-14 13:32 - person.man@example.com - I hate you\n"
         " 2. Unknown          - person.man@example.com - I hate you\n"
-        " 3. 2010-08-14 13:32 - person.man@example.com - I hate you\n"
+        " 3. Unknown          - person.man@example.com - I hate you\n"
     )
     wemail.check_email(good_loaded_config)
     capsys.readouterr()
@@ -716,54 +737,6 @@ def test_when_commonmark_header_is_present_it_should_render_message(
 def good_draft(testdir, goodheaders):
     with wemail.Message(draftdir=testdir, headers=goodheaders) as draft:
         yield draft
-
-
-@pytest.mark.skip
-def test_when_composing_an_email_a_file_should_be_created_in_draft_dir(goodconfig):
-    with wemail.Message(config=goodconfig) as composer:
-        assert composer.filename.exists()
-
-
-@pytest.mark.skip
-def test_when_block_exits_naturally_draft_should_be_deleted(goodconfig):
-    with wemail.Message(config=goodconfig) as composer:
-        pass
-
-    assert not composer.filename.exists()
-
-
-@pytest.mark.skip
-def test_when_block_exits_exceptionally_draft_should_stay(goodconfig):
-    class Foo(Exception):
-        pass
-
-    try:
-        with wemail.Message(config=goodconfig) as composer:
-            raise Foo("Bye")
-    except Foo:
-        pass
-
-    assert composer.filename.exists()
-
-
-@pytest.mark.skip
-def test_default_headers_should_be_set_on_resulting_email(goodconfig):
-    with wemail.Message(config=goodconfig) as composer:
-        msg = composer.msg
-        for header in goodconfig["default_headers"]:
-            assert msg[header] == str(goodconfig["default_headers"][header])
-
-
-@pytest.mark.skip
-def test_creating_simple_email(test_server):
-    with smtplib.SMTP(test_server.hostname, test_server.port) as smtp:
-        from email.mime.text import MIMEText as e
-
-        msg = e("Hello worlds")
-        msg["From"] = "me@example.com"
-        msg["To"] = "you@example.com"
-        smtp.send_message(msg)
-        assert "" == dir(test_server.handler.box[0])
 
 
 def test_if_draft_exception_happens_draft_file_should_still_exist(testdir):

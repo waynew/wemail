@@ -50,7 +50,7 @@ except ImportError as e:  # pragma: no cover
     except ImportError:
         commonmark = None
 
-__version__ = "0.3.0b2"
+__version__ = "0.3.0b3"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -1369,19 +1369,17 @@ def get_templates(*, dirname):
     return templates
 
 
-def reply(*, config, mailfile, reply_all=True):
+def reply(*, config, mailfile, reply_all=False):
     if mailfile.name.isdigit():
         curmaildir = config["maildir"] / "cur"
-        mailfile = Path(
-            list(f for f in curmaildir.iterdir() if f.is_file())[int(mailfile.name) - 1]
-        )
+        mailfile = sorted_mailfiles(maildir=curmaildir)[int(mailfile.name) - 1]
     msg = _parser.parsebytes(mailfile.read_bytes())
-    msg = replyify(msg=msg, sender=msg["from"], reply_all=reply_all)
+    msg = replyify(msg=msg, sender=msg["to"], reply_all=reply_all)
     draft = create_draft(template=str(msg), config=config)
     subprocess.call([config["EDITOR"], draft])
     choice = action_prompt()
     if choice == "s":
-        send(config=config, mailfile=mailfile)
+        send(config=config, mailfile=draft)
 
 
 def check_email(config):
@@ -1431,20 +1429,8 @@ def do_new(config):
         else:
             print("\rSending now...[0K")
             stage_name = draft.parent.parent / "outbox" / draft.name
-            draft = draft.rename(stage_name)
-            msg = _parser.parsebytes(stage_name.read_bytes())
-            send_message(
-                msg=msg,
-                smtp_host=config.get("SMTP_HOST", "localhost"),
-                smtp_port=config.get("SMTP_PORT", 25),
-                use_tls=config.get("SMTP_USE_TLS", False),
-                use_smtps=config.get("SMTP_USE_SMTPS", False),
-                username=config.get("SMTP_USERNAME", False),
-                password=config.get("SMTP_PASSWORD", False),
-            )
-            sent_name = stage_name.parent.parent / "sent" / stage_name.name
-            stage_name.rename(sent_name)
-            print("Sent!")
+            draft.rename(stage_name)
+            send(config=config, mailfile=stage_name)
             staged_email_count = len(list((maildir / "outbox").iterdir()))
             if staged_email_count:
                 print(
@@ -1516,20 +1502,31 @@ def get_msg_date(file):
     return msg_timestamp
 
 
+def sorted_mailfiles(*, maildir):
+    msg_list = [file for file in maildir.iterdir() if file.is_file()]
+    msg_list.sort(key=get_msg_date)
+    return msg_list
+
+
+def iter_headers(*, maildir):
+    for file in sorted_mailfiles(maildir=maildir):
+        with file.open("rb") as f:
+            headers = _header_parser.parse(f)
+        yield headers
+
+
 def iter_messages(*, maildir):
     """
     Iterate over the messages in maildir, yielding each parsed message.
     """
-    msg_list = [file for file in maildir.iterdir() if file.is_file()]
-    msg_list.sort(key=get_msg_date)
-    for file in msg_list:
+    for file in sorted_mailfiles(maildir=maildir):
         msg = _parser.parsebytes(file.read_bytes())
         yield msg
 
 
 def list_messages(*, config):
     maildir = config["maildir"] / "cur"
-    for i, msg in enumerate(iter_messages(maildir=maildir), start=1):
+    for i, msg in enumerate(iter_headers(maildir=maildir), start=1):
         if "date" in msg:
             date = parsedate_to_datetime(msg["date"])
             date_str = f"{date:%Y-%m-%d %H:%M}"

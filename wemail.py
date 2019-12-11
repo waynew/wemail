@@ -50,7 +50,7 @@ except ImportError as e:  # pragma: no cover
     except ImportError:
         commonmark = None
 
-__version__ = "0.3.0b4"
+__version__ = "0.3.0b5"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)

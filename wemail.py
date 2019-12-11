@@ -27,7 +27,7 @@ from email.parser import BytesHeaderParser
 from email.parser import BytesParser
 from email.policy import EmailPolicy
 from email.utils import formataddr
-from email.utils import formatdate
+from email.utils import format_datetime
 from email.utils import getaddresses
 from email.utils import parseaddr
 from email.utils import parsedate_to_datetime
@@ -567,7 +567,7 @@ def send_message(
         chain(msg.get_all("To", []), msg.get_all("Cc", []), msg.get_all("Bcc", []))
     )
     if not msg.get("Date"):
-        msg["Date"] = formatdate()
+        msg["Date"] = format_datetime(datetime.now(timezone.utc))
     SMTP = smtplib.SMTP_SSL if use_smtps else smtplib.SMTP
     with SMTP(host=smtp_host, port=smtp_port) as smtp:
         if use_tls:
@@ -1499,6 +1499,8 @@ def get_msg_date(file):
     msg_timestamp = datetime.fromtimestamp(file.stat().st_mtime, LOCAL_TZ)
     if headers["date"]:
         msg_timestamp = parsedate_to_datetime(headers["date"])
+        if msg_timestamp.tzinfo is None:
+            msg_timestamp = msg_timestamp.replace(tzinfo=timezone.utc)
     return msg_timestamp
 
 

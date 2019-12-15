@@ -50,7 +50,7 @@ except ImportError as e:  # pragma: no cover
     except ImportError:
         commonmark = None
 
-__version__ = "0.3.0b5"
+__version__ = "0.3.0b6"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -361,6 +361,7 @@ def commonmarkdown(plain_msg):
     msg = _parser.parsebytes(plain_msg.as_bytes())
     del msg["X-CommonMark"]
 
+    msg.set_content(msg.get_content())
     msg.make_alternative()
     msg.add_alternative(commonmark(plain_msg.get_payload()), subtype="html")
     return msg

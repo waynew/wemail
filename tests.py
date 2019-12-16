@@ -683,12 +683,15 @@ def test_send_should_move_mailfile_to_sent_after_success(sample_good_mailfile):
 def test_reply_email_should_send_when_done_composing_if_told(good_loaded_config):
     wemail.check_email(good_loaded_config)
 
-    mailfile = next((good_loaded_config["maildir"] / "cur").iterdir())
+    mailfile = wemail.sorted_mailfiles(maildir=good_loaded_config["maildir"] / "cur")[0]
     good_loaded_config["EDITOR"] = "tail"
 
     mock_send = mock.patch("wemail.send", autospec=True)
+    mock_draftname = mock.patch("wemail._make_draftname", return_value=mailfile.name)
 
-    with mock.patch("builtins.input", return_value="s"), mock_send as fake_send:
+    with mock.patch(
+        "builtins.input", return_value="s"
+    ), mock_send as fake_send, mock_draftname:
         wemail.reply(config=good_loaded_config, mailfile=mailfile)
 
         fake_send.assert_called_with(config=good_loaded_config, mailfile=mailfile)

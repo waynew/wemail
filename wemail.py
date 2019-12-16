@@ -48,7 +48,14 @@ except ImportError as e:  # pragma: no cover
 
         log.debug("Got commonmark")
     except ImportError:
-        commonmark = None
+
+        def commonmark(msg):
+            return msg
+
+        print(
+            "No commonmark/markdown library installed. Install mistletoe"
+            " or commonmark"
+        )
 
 __version__ = "0.3.0b6"
 POLICY = EmailPolicy(utf8=True)
@@ -1471,26 +1478,57 @@ def send_all(*, config):
 
 def send(*, config, mailfile):
     sentfile = config["maildir"] / "sent" / mailfile.name
+    print("Sentfile")
     msg = _parser.parsebytes(mailfile.read_bytes())
     from_addr = parseaddr(msg["from"])[1]
     config = config.copy()
     if from_addr in config:
         config.update(config[from_addr])
-    print(f'Sending {msg["subject"]!r} to {msg["to"]} ... ', end="")
     msg = commonmarkdown(msg)
     msg = attachify(msg)
-    send_message(
-        msg=msg,
-        smtp_host=config.get("SMTP_HOST", "localhost"),
-        smtp_port=config.get("SMTP_PORT", 25),
-        use_tls=config.get("SMTP_USE_TLS", False),
-        use_smtps=config.get("SMTP_USE_SMTPS", False),
-        username=config.get("SMTP_USERNAME", False),
-        password=config.get("SMTP_PASSWORD", False),
-    )
+    mailing_list = msg.get("X-MailingList")
+    if mailing_list:
+        recipients = config.get("mailing_list", {}).get(mailing_list)
+        choice = input(f"Sending to {len(recipients)}, continue? [Y/n]: ")
+        if choice.lower().strip() in ("n", "no"):
+            print("Aborted")
+            return
+        for recipient in recipients:
+            if not recipient.strip():
+                continue
+            for field in ("to", "cc", "bcc"):
+                try:
+                    del msg[field]
+                except KeyError:
+                    pass
+            msg["To"] = recipient
+            print(f"\tSending to {recipient}...", end="")
+            sys.stdout.flush()
+            send_message(
+                msg=msg,
+                smtp_host=config.get("SMTP_HOST", "localhost"),
+                smtp_port=config.get("SMTP_PORT", 25),
+                use_tls=config.get("SMTP_USE_TLS", False),
+                use_smtps=config.get("SMTP_USE_SMTPS", False),
+                username=config.get("SMTP_USERNAME", False),
+                password=config.get("SMTP_PASSWORD", False),
+            )
+            print("OK")
+    else:
+        print(f'Sending {msg["subject"]!r} to {msg["to"]} ... ', end="")
+        sys.stdout.flush()
+        send_message(
+            msg=msg,
+            smtp_host=config.get("SMTP_HOST", "localhost"),
+            smtp_port=config.get("SMTP_PORT", 25),
+            use_tls=config.get("SMTP_USE_TLS", False),
+            use_smtps=config.get("SMTP_USE_SMTPS", False),
+            username=config.get("SMTP_USERNAME", False),
+            password=config.get("SMTP_PASSWORD", False),
+        )
+        print("OK")
     sentfile.parent.mkdir(parents=True, exist_ok=True)
     mailfile.rename(sentfile)
-    print("OK")
 
 
 def get_msg_date(file):
@@ -1590,8 +1628,15 @@ def load_config(config_file):
     if "" in config:
         config.pop("")
 
-    config["maildir"] = Path(config.get("maildir", "~/wemail/")).expanduser().resolve()
-    config["EDITOR"] = os.environ.get("EDITOR", os.environ.get("VISUAL", "nano"))
+    config["maildir"] = (
+        Path(config.get("maildir", config.get("MAILDIR", "~/wemail/")))
+        .expanduser()
+        .resolve()
+    )
+    config["EDITOR"] = config.get(
+        "EDITOR", os.environ.get("EDITOR", os.environ.get("VISUAL", "nano"))
+    )
+    print("maildir", config["maildir"])
     return config
 
 

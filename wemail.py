@@ -138,7 +138,11 @@ def make_parser():
     )
 
     save_parser = subparsers.add_parser("save", help="Save a message.")
-    save_parser.set_defaults(action="save")
+    save_parser.set_defaults(action="save", folder="saved-messages")
+    save_parser.add_argument(
+        "mailnumber",
+        help="Message number to save. Note that message numbers may change when mail is checked, saved, or removed!",
+    )
     save_parser.add_argument(
         "--folder",
         default="saved-messages",
@@ -415,7 +419,7 @@ def attachify(msg):
     attachment_ids = set()
     for attachment in attachments:
         filename, *extra = attachment.split(";")
-        filename = Path(filename).resolve()
+        filename = Path(filename).expanduser().resolve()
         name = filename.name
         type_, encoding = mimetypes.guess_type(filename.name)
         disposition = "attachment"
@@ -1411,19 +1415,31 @@ def reply(*, config, mailfile, reply_all=False):
         send(config=config, mailfile=draft)
 
 
-def remove(*, maildir, mailnumber):
+def save(*, config, maildir, mailnumber, target_folder):
     try:
+        target_folder = config["maildir"] / target_folder
         mailfile = sorted_mailfiles(maildir=maildir)[abs(int(mailnumber)) - 1]
         with mailfile.open("rb") as f:
             headers = _header_parser.parse(f)
-        trashfile = mailfile.parent.parent / "trash" / mailfile.name
-        trashfile.parent.mkdir(parents=True, exist_ok=True)
-        mailfile.rename(trashfile)
+        newfile = target_folder / mailfile.name
+        target_folder.mkdir(parents=True, exist_ok=True)
+        mailfile.rename(newfile)
         print(
-            f'Moved message from {headers["from"]} - {headers["subject"]!r} to trash.'
+            f'Moved message from {headers["from"]} - {headers["subject"]!r}'
+            f" to {target_folder.name}."
         )
     except (FileNotFoundError, IndexError):
         print(f"No mail found with number {mailnumber}")
+
+
+def remove(*, config, maildir, mailnumber):
+    save(
+        config=config,
+        maildir=maildir,
+        mailnumber=mailnumber,
+        target_folder=config["maildir"] / "trash",
+    )
+    # TODO: empty old trash messages -W. Werner, 2020-01-03
 
 
 def check_email(config):
@@ -1703,8 +1719,19 @@ def do_it_two_it(args):  # Shia LeBeouf!
             return read(
                 config=config, mailnumber=args.mailnumber, all_headers=args.all_headers
             )
+        elif args.action == "save":
+            return save(
+                config=config,
+                maildir=config["maildir"] / "cur",
+                mailnumber=args.mailnumber,
+                target_folder=args.folder,
+            )
         elif args.action == "remove":
-            return remove(maildir=config["maildir"] / "cur", mailnumber=args.mailnumber)
+            return remove(
+                config=config,
+                maildir=config["maildir"] / "cur",
+                mailnumber=args.mailnumber,
+            )
 
     except KeyboardInterrupt:
         print("\n^C caught, bye!")

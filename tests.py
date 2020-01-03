@@ -204,6 +204,12 @@ def args_version(good_config):
 
 
 @pytest.fixture()
+def args_save():
+    args = parser.parse_args(["save", "1", "--folder", "saved-messages"])
+    return args
+
+
+@pytest.fixture()
 def args_remove():
     args = parser.parse_args(["rm", "1"])
     return args
@@ -306,6 +312,19 @@ def test_when_action_is_list_it_should_list(args_list, good_loaded_config):
         fake_list.assert_called_with(config=good_loaded_config)
 
 
+def test_when_action_is_save_it_should_save(args_save, good_loaded_config):
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    patch_save = mock.patch("wemail.save", autospec=True)
+    with patch_save as fake_save, patch_config:
+        wemail.do_it_two_it(args_save)
+        fake_save.assert_called_with(
+            config=good_loaded_config,
+            maildir=good_loaded_config["maildir"] / "cur",
+            mailnumber=args_save.mailnumber,
+            target_folder=args_save.folder,
+        )
+
+
 def test_when_action_is_read_it_should_read(args_read, good_loaded_config):
     patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
     patch_read = mock.patch("wemail.read", autospec=True)
@@ -324,6 +343,7 @@ def test_when_good_remove_is_passed_it_should_remove(args_remove, good_loaded_co
     with patch_remove as fake_remove, patch_config:
         wemail.do_it_two_it(args_remove)
         fake_remove.assert_called_with(
+            config=good_loaded_config,
             maildir=good_loaded_config["maildir"] / "cur",
             mailnumber=args_remove.mailnumber,
         )
@@ -791,7 +811,7 @@ def test_when_rm_is_called_on_message_that_exists_it_should_go_away(
     for file in wemail.sorted_mailfiles(maildir=temp_maildir):
         count += 1
         assert file.exists(), "Mailfile somehow got pre-deleted?"
-        wemail.remove(maildir=temp_maildir, mailnumber=1)
+        wemail.remove(config=good_loaded_config, maildir=temp_maildir, mailnumber=1)
         assert not file.exists(), "Mailfile failed to delete"
     assert count > 0, "We did not actually check deleting any files"
 
@@ -804,13 +824,78 @@ def test_when_rm_is_called_it_should_print_which_message_was_removed(
         "Moved message from person.man@example.com - 'I hate you' to trash.\n"
     )
 
-    wemail.remove(maildir=temp_maildir, mailnumber=1)
+    wemail.remove(config=good_loaded_config, maildir=temp_maildir, mailnumber=1)
 
     captured = capsys.readouterr()
     assert captured.out == expected_message
 
 
 # End remove tests }}}
+
+# {{{ Save email tests
+
+
+@pytest.mark.parametrize("mailnumber", [6, 10, 42])
+def test_when_save_is_called_on_non_existent_message_it_should_display_no_mail_message(
+    capsys, good_loaded_config, args_save, mailnumber
+):
+    args_save.mailnumber = mailnumber
+    expected_message = f"No mail found with number {mailnumber}\n"
+
+    curmaildir = good_loaded_config["maildir"] / "new"
+    assert 0 < sum(1 for _ in curmaildir.iterdir()) < 5
+
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_config:
+        wemail.do_it_two_it(args_save)
+
+    captured = capsys.readouterr()
+    assert captured.out == expected_message
+
+
+def test_when_save_is_called_on_message_that_exists_it_should_go_to_save_folder(
+    good_loaded_config, temp_maildir
+):
+    temp_maildir = pathlib.Path(temp_maildir) / "new"
+    target_folder = temp_maildir.parent / "blarp"
+    count = 0
+    for file in wemail.sorted_mailfiles(maildir=temp_maildir):
+        count += 1
+        assert file.exists(), "Mailfile should have been there"
+        wemail.save(
+            config=good_loaded_config,
+            maildir=temp_maildir,
+            mailnumber=1,
+            target_folder=target_folder,
+        )
+        assert not file.exists(), "Mailfile failed to be removed"
+        assert (
+            target_folder / file.name
+        ).exists(), "Mailfile was not saved in target folder"
+    assert count > 0, "We did not actually check saving any files"
+
+
+def test_when_save_is_called_it_should_print_which_message_was_saved(
+    capsys, good_loaded_config, temp_maildir
+):
+    temp_maildir = pathlib.Path(temp_maildir) / "new"
+    target_folder = temp_maildir.parent / "fnord"
+    expected_message = (
+        "Moved message from person.man@example.com - 'I hate you' to fnord.\n"
+    )
+
+    wemail.save(
+        config=good_loaded_config,
+        maildir=temp_maildir,
+        mailnumber=1,
+        target_folder=target_folder,
+    )
+
+    captured = capsys.readouterr()
+    assert captured.out == expected_message
+
+
+# End save email tests }}}
 
 # {{{ Below here? Not sure what's what!
 ###########################

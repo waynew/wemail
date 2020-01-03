@@ -203,6 +203,24 @@ def args_version(good_config):
     return args
 
 
+@pytest.fixture()
+def args_remove():
+    args = parser.parse_args(["rm", "1"])
+    return args
+
+
+@pytest.fixture()
+def args_bad_rm_number():
+    args = parser.parse_args(["rm", "6"])
+    return args
+
+
+@pytest.fixture()
+def args_bad_rm_number():
+    args = parser.parse_args(["rm", "6"])
+    return args
+
+
 # end fixtures }}}
 
 # {{{ action tests
@@ -297,6 +315,17 @@ def test_when_action_is_read_it_should_read(args_read, good_loaded_config):
             config=good_loaded_config,
             mailnumber=args_read.mailnumber,
             all_headers=args_read.all_headers,
+        )
+
+
+def test_when_good_remove_is_passed_it_should_remove(args_remove, good_loaded_config):
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    patch_remove = mock.patch("wemail.remove", autospec=True)
+    with patch_remove as fake_remove, patch_config:
+        wemail.do_it_two_it(args_remove)
+        fake_remove.assert_called_with(
+            maildir=good_loaded_config["maildir"] / "cur",
+            mailnumber=args_remove.mailnumber,
         )
 
 
@@ -732,6 +761,56 @@ def test_when_commonmark_header_is_present_it_should_render_message(
 
 
 # End custom header tests }}}
+
+# {{{ Remove tests
+
+
+@pytest.mark.parametrize("mailnumber", [6, 10, 42])
+def test_when_rm_is_called_on_non_existent_message_it_should_display_no_mail_message(
+    capsys, good_loaded_config, args_bad_rm_number, mailnumber
+):
+    args_bad_rm_number.mailnumber = mailnumber
+    expected_message = f"No mail found with number {mailnumber}\n"
+
+    curmaildir = good_loaded_config["maildir"] / "cur"
+    assert sum(1 for _ in curmaildir.iterdir()) < 5
+
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_config:
+        wemail.do_it_two_it(args_bad_rm_number)
+
+    captured = capsys.readouterr()
+    assert captured.out == expected_message
+
+
+def test_when_rm_is_called_on_message_that_exists_it_should_go_away(
+    good_loaded_config, temp_maildir
+):
+    temp_maildir = pathlib.Path(temp_maildir) / "new"
+    count = 0
+    for file in wemail.sorted_mailfiles(maildir=temp_maildir):
+        count += 1
+        assert file.exists(), "Mailfile somehow got pre-deleted?"
+        wemail.remove(maildir=temp_maildir, mailnumber=1)
+        assert not file.exists(), "Mailfile failed to delete"
+    assert count > 0, "We did not actually check deleting any files"
+
+
+def test_when_rm_is_called_it_should_print_which_message_was_removed(
+    capsys, good_loaded_config, temp_maildir
+):
+    temp_maildir = pathlib.Path(temp_maildir) / "new"
+    expected_message = (
+        "Moved message from person.man@example.com - 'I hate you' to trash.\n"
+    )
+
+    wemail.remove(maildir=temp_maildir, mailnumber=1)
+
+    captured = capsys.readouterr()
+    assert captured.out == expected_message
+
+
+# End remove tests }}}
 
 # {{{ Below here? Not sure what's what!
 ###########################

@@ -127,6 +127,24 @@ def make_parser():
     )
     list_parser.set_defaults(action="list")
 
+    remove_parser = subparsers.add_parser(
+        "rm",
+        help="Delete a message by moving it to the trash. Messages older than 30 days will be permanently deleted.",
+    )
+    remove_parser.set_defaults(action="remove")
+    remove_parser.add_argument(
+        "mailnumber",
+        help="The message number from the 'list' to delete. Note that message numbers may change when mail is checked, saved, or removed!",
+    )
+
+    save_parser = subparsers.add_parser("save", help="Save a message.")
+    save_parser.set_defaults(action="save")
+    save_parser.add_argument(
+        "--folder",
+        default="saved-messages",
+        help="Name of the folder to save to. If folder does not exist, it will be created after confirmation.",
+    )
+
     # TODO: It would be pretty cool to have capability to read emails in different viewer, like html open in a browser -W. Werner, 2019-12-06
     read_parser = subparsers.add_parser("read", help="Read a single message")
     read_parser.set_defaults(action="read")
@@ -1393,6 +1411,21 @@ def reply(*, config, mailfile, reply_all=False):
         send(config=config, mailfile=draft)
 
 
+def remove(*, maildir, mailnumber):
+    try:
+        mailfile = sorted_mailfiles(maildir=maildir)[abs(int(mailnumber)) - 1]
+        with mailfile.open("rb") as f:
+            headers = _header_parser.parse(f)
+        trashfile = mailfile.parent.parent / "trash" / mailfile.name
+        trashfile.parent.mkdir(parents=True, exist_ok=True)
+        mailfile.rename(trashfile)
+        print(
+            f'Moved message from {headers["from"]} - {headers["subject"]!r} to trash.'
+        )
+    except (FileNotFoundError, IndexError):
+        print(f"No mail found with number {mailnumber}")
+
+
 def check_email(config):
     maildir = config["maildir"]
     curdir = maildir / "cur"
@@ -1670,6 +1703,9 @@ def do_it_two_it(args):  # Shia LeBeouf!
             return read(
                 config=config, mailnumber=args.mailnumber, all_headers=args.all_headers
             )
+        elif args.action == "remove":
+            return remove(maildir=config["maildir"] / "cur", mailnumber=args.mailnumber)
+
     except KeyboardInterrupt:
         print("\n^C caught, bye!")
 

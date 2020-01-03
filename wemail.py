@@ -57,7 +57,7 @@ except ImportError as e:  # pragma: no cover
             " or commonmark"
         )
 
-__version__ = "0.3.0b7"
+__version__ = "0.3.0"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -1501,7 +1501,12 @@ def do_new(config):
         draft.rename(stage_name)
         print(f"Email queued as {stage_name}")
     elif choice == "v":
-        print(f"Draft saved as {draft}")
+        with draft.open("rb") as f:
+            headers = _header_parser.parse(f)
+        subject = subjectify(msg=headers)
+        new_name = draft.parent / _make_draftname(subject=subject)
+        draft.rename(new_name)
+        print(f"Draft saved as {new_name}")
     elif choice == "d":
         choice = input("Really delete draft? Cannot be undone! [y/N]: ")
         if choice.lower() in ("y", "yes", "ja", "si", "oui"):

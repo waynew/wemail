@@ -61,7 +61,7 @@ def testdir():
 def test_server():
     try:
         handler = MyHandler()
-        controller = Controller(handler)
+        controller = Controller(handler, port=8173)
         controller.handler = handler
         controller.start()
         yield controller
@@ -259,7 +259,7 @@ def test_when_action_is_reply_all_it_should_reply_all(
     with patch_reply_all as fake_reply_all, patch_config:
         wemail.do_it_two_it(args_reply_all)
         fake_reply_all.assert_called_with(
-            config=good_loaded_config, mailfile=args_reply_all.mailfile, reply_all=True,
+            config=good_loaded_config, mailfile=args_reply_all.mailfile, reply_all=True
         )
 
 
@@ -688,10 +688,11 @@ def test_reply_email_should_send_when_done_composing_if_told(good_loaded_config)
 
     mock_send = mock.patch("wemail.send", autospec=True)
     mock_draftname = mock.patch("wemail._make_draftname", return_value=mailfile.name)
+    mock_draftdir = mock.patch.dict(good_loaded_config, {"draft_dir": mailfile.parent})
 
     with mock.patch(
         "builtins.input", return_value="s"
-    ), mock_send as fake_send, mock_draftname:
+    ), mock_send as fake_send, mock_draftname, mock_draftdir:
         wemail.reply(config=good_loaded_config, mailfile=mailfile)
 
         fake_send.assert_called_with(config=good_loaded_config, mailfile=mailfile)

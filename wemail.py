@@ -473,7 +473,7 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
         date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
 
     try:
-        body = reply.get_body().get_payload()
+        body = reply.get_body().get_payload(decode=True).decode()
     except AttributeError:
         body = ""
     reply.get_body().set_content(
@@ -1373,7 +1373,10 @@ def get_templates(*, dirname):
     path = Path(dirname)
     templates = []
     for f in path.iterdir():
-        templates.append(EmailTemplate(name=f.name, content=f.read_text()))
+        try:
+            templates.append(EmailTemplate(name=f.name, content=f.read_text()))
+        except Exception:
+            print(f"Failed to read template {f.name}")
     return templates
 
 
@@ -1478,7 +1481,6 @@ def send_all(*, config):
 
 def send(*, config, mailfile):
     sentfile = config["maildir"] / "sent" / mailfile.name
-    print("Sentfile")
     msg = _parser.parsebytes(mailfile.read_bytes())
     from_addr = parseaddr(msg["from"])[1]
     config = config.copy()
@@ -1488,14 +1490,14 @@ def send(*, config, mailfile):
     msg = attachify(msg)
     mailing_list = msg.get("X-MailingList")
     if mailing_list:
-        recipients = config.get("mailing_list", {}).get(mailing_list)
+        recipients = [
+            r for r in config.get("mailing_list", {}).get(mailing_list) if r.strip()
+        ]
         choice = input(f"Sending to {len(recipients)}, continue? [Y/n]: ")
         if choice.lower().strip() in ("n", "no"):
             print("Aborted")
             return
         for recipient in recipients:
-            if not recipient.strip():
-                continue
             for field in ("to", "cc", "bcc"):
                 try:
                     del msg[field]
@@ -1636,7 +1638,6 @@ def load_config(config_file):
     config["EDITOR"] = config.get(
         "EDITOR", os.environ.get("EDITOR", os.environ.get("VISUAL", "nano"))
     )
-    print("maildir", config["maildir"])
     return config
 
 

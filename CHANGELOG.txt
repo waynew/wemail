@@ -1,7 +1,18 @@
-
 The changelog format is based on [Keep 
 a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+
+## [0.4.0] - 2010-01-17
+
+## Added
+
+- `raw` command to view the original message.
+
+## Fixed
+
+- reply/reply_all use appropriate recipients
+- Content with too-long lines no longer show up with quoted-printable (`=20`)
+  formatting
 
 ## [0.3.0] - 2020-01-03
 
@@ -9,8 +20,6 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - WEmail interface is re-written. Rather than a prompt style program, arguments
   are passed via command line. Run `wemail --help` for more info.
-
----
 
 ## [0.2.0] - 2019-11-14
 

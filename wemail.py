@@ -1,6 +1,7 @@
 import argparse
 import ast
 import collections
+import quopri
 import io
 import json
 import logging
@@ -57,7 +58,7 @@ except ImportError as e:  # pragma: no cover
             " or commonmark"
         )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -115,7 +116,7 @@ def make_parser():
         "reply_all", help="Reply to all recipients of an email."
     )
     reply_all_parser.set_defaults(action="reply_all")
-    reply_all_parser.add_argument("mailfile")
+    reply_all_parser.add_argument("mailfile", type=Path)
 
     update_parser = subparsers.add_parser(
         "update", help="Check for, and install updates."
@@ -157,6 +158,9 @@ def make_parser():
         "--all-headers", help="Provide all headers instead of a limited set."
     )
 
+    raw_parser = subparsers.add_parser("raw", help="Read a raw/original single message")
+    raw_parser.set_defaults(action="raw")
+    raw_parser.add_argument("mailnumber", type=int)
     return parser
 
 
@@ -465,8 +469,15 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
     if reply_all:
         to_recipients = getaddresses(msg.get_all("From", []) + msg.get_all("To", []))
         cc_recipients = getaddresses(msg.get_all("Cc", []))
-        reply["To"] = ", ".join(formataddr(addr) for addr in to_recipients)
-        reply["Cc"] = ", ".join(formataddr(addr) for addr in cc_recipients)
+        sender_addr = getaddresses([sender])[0]
+        if to_recipients:
+            if sender_addr in to_recipients:
+                to_recipients.remove(sender_addr)
+            reply["To"] = ", ".join(formataddr(addr) for addr in to_recipients)
+        if cc_recipients:
+            if sender_addr in cc_recipients:
+                cc_recipients.remove(sender_addr)
+            reply["Cc"] = ", ".join(formataddr(addr) for addr in cc_recipients)
     else:
         for fromaddr in msg.get_all("Reply-To", msg.get_all("From", [])):
             reply["To"] = fromaddr
@@ -498,7 +509,7 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
         body = reply.get_body().get_payload(decode=True).decode()
     except AttributeError:
         body = ""
-    reply.get_body().set_content(
+    reply.set_content(
         f"On {date}, {msg_sender} wrote:\n> " + body.replace("\n", "\n> ")
     )
     reply["Subject"] = "Re: " + msg.get("subject", "")
@@ -1407,8 +1418,13 @@ def reply(*, config, mailfile, reply_all=False):
         curmaildir = config["maildir"] / "cur"
         mailfile = sorted_mailfiles(maildir=curmaildir)[int(mailfile.name) - 1]
     msg = _parser.parsebytes(mailfile.read_bytes())
-    msg = replyify(msg=msg, sender=msg["to"], reply_all=reply_all)
-    draft = create_draft(template=str(msg), config=config)
+    msg = replyify(
+        msg=msg, sender=get_sender(msg=msg, config=config), reply_all=reply_all
+    )
+    if msg.get("content-transfer-encoding").lower() == "quoted-printable":
+        del msg["content-transfer-encoding"]
+    msg = quopri.decodestring(msg.as_bytes()).decode()
+    draft = create_draft(template=msg, config=config)
     subprocess.call([config["EDITOR"], draft])
     choice = action_prompt()
     if choice == "s":
@@ -1635,6 +1651,11 @@ def list_messages(*, config):
         print(f"{i:>2}. {date_str} - {sender} - {subject}")
 
 
+def raw(*, config, mailnumber):
+    mailfile = sorted_mailfiles(maildir=config["maildir"] / "cur")[mailnumber - 1]
+    subprocess.run([config["EDITOR"], mailfile.resolve()])
+
+
 def read(*, config, mailnumber, all_headers=False, part=None):
     message_iter = iter_messages(maildir=config["maildir"] / "cur")
     # TODO: This works but it doesn't have comprehensive test coverage -W. Werner, 2019-12-06
@@ -1724,6 +1745,8 @@ def do_it_two_it(args):  # Shia LeBeouf!
             return read(
                 config=config, mailnumber=args.mailnumber, all_headers=args.all_headers
             )
+        elif args.action == "raw":
+            return raw(config=config, mailnumber=args.mailnumber)
         elif args.action == "save":
             return save(
                 config=config,

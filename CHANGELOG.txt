@@ -1,6 +1,17 @@
 The changelog format is based on [Keep 
 a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+This project uses [CalVer][calver] - YYYY.0M.0D(.MICRO)
+
+## Unreleased
+
+### Changed
+
+- Changed to [CalVer][calver] versioning.
+
+### Fixed
+
+- Sent emails now get a pretty name.
 
 ## [0.4.0] - 2010-01-17
 
@@ -224,3 +235,6 @@ Minimally useful product released.
 - Ability to process a maildir-style folder.
 - Ability to view parts of messages.
 - Ability to save messages in new directories.
+
+
+calver: https://calver.org/

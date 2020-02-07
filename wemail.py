@@ -111,6 +111,12 @@ def make_parser():
     )
     reply_parser.set_defaults(action="reply")
     reply_parser.add_argument("mailfile", type=Path)
+    reply_parser.add_argument(
+        "--keep-attachments",
+        action="store_true",
+        default=False,
+        help="Keep attachments when replying.",
+    )
 
     reply_all_parser = subparsers.add_parser(
         "reply_all", help="Reply to all recipients of an email."
@@ -456,10 +462,41 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
     followed by `From`. If `all_recipients` is ``True``, add every
     recipient to the list(s) they were in.
     """
-    if not keep_attachments:
-        reply = _parser.parsebytes(msg.get_body(("plain", "html")).as_bytes())
-    else:
+    if keep_attachments or msg.get_body(("plain", "html")) is None:
         reply = _parser.parsebytes(msg.as_bytes())
+    else:
+        reply = _parser.parsebytes(msg.get_body(("plain", "html")).as_bytes())
+
+    date = "a day in the past"
+    try:
+        date = parsedate_to_datetime(msg["Date"]) or date
+    except KeyError:
+        pass
+    except TypeError:
+        date = msg["Date"] or date
+    else:
+        date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
+
+    try:
+        body = reply.get_body().get_payload(decode=True).decode()
+    except AttributeError:
+        body = ""
+
+    try:
+        from_addr = msg.get("From").addresses[0]
+        msg_sender = from_addr.display_name or str(from_addr)
+    except IndexError:
+        msg_sender = "Unknown"
+
+    for part in reply.walk():
+        if part.get_content_type() == "text/plain":
+            part.set_content(
+                f"On {date}, {msg_sender} wrote:\n> " + body.replace("\n", "\n> ")
+            )
+            break
+        # TODO: Need to completely rehash replyifying emails to build an email from email parts -W. Werner, 2020-02-07
+    del reply["Subject"]
+    reply["Subject"] = "Re: " + msg.get("subject", "")
 
     for field in SKIPPED_HEADERS:
         try:
@@ -490,29 +527,6 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
     finally:
         reply["From"] = sender
 
-    try:
-        from_addr = msg.get("From").addresses[0]
-        msg_sender = from_addr.display_name or str(from_addr)
-    except IndexError:
-        msg_sender = "Unknown"
-
-    try:
-        date = parsedate_to_datetime(msg["Date"])
-    except KeyError:
-        date = "a day in the past"
-    except TypeError:
-        date = msg["Date"]
-    else:
-        date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
-
-    try:
-        body = reply.get_body().get_payload(decode=True).decode()
-    except AttributeError:
-        body = ""
-    reply.set_content(
-        f"On {date}, {msg_sender} wrote:\n> " + body.replace("\n", "\n> ")
-    )
-    reply["Subject"] = "Re: " + msg.get("subject", "")
     return reply
 
 
@@ -1413,18 +1427,18 @@ def get_templates(*, dirname):
     return templates
 
 
-def reply(*, config, mailfile, reply_all=False):
+def reply(*, config, mailfile, reply_all=False, keep_attachments=False):
     if mailfile.name.isdigit():
         curmaildir = config["maildir"] / "cur"
         mailfile = sorted_mailfiles(maildir=curmaildir)[int(mailfile.name) - 1]
     msg = _parser.parsebytes(mailfile.read_bytes())
     msg = replyify(
-        msg=msg, sender=get_sender(msg=msg, config=config), reply_all=reply_all
+        msg=msg,
+        sender=get_sender(msg=msg, config=config),
+        reply_all=reply_all,
+        keep_attachments=keep_attachments,
     )
-    if msg.get("content-transfer-encoding").lower() == "quoted-printable":
-        del msg["content-transfer-encoding"]
-    msg = quopri.decodestring(msg.as_bytes()).decode()
-    draft = create_draft(template=msg, config=config)
+    draft = create_draft(template=msg.as_string(), config=config)
     subprocess.call([config["EDITOR"], draft])
     choice = action_prompt()
     if choice == "s":
@@ -1550,8 +1564,9 @@ def send_all(*, config):
 
 
 def send(*, config, mailfile):
-    sentfile = config["maildir"] / "sent" / mailfile.name
     msg = _parser.parsebytes(mailfile.read_bytes())
+    prettyname = f"{prettynow()}-{subjectify(msg=msg)}.eml"
+    sentfile = config["maildir"] / "sent" / prettyname
     from_addr = parseaddr(msg["from"])[1]
     config = config.copy()
     if from_addr in config:
@@ -1732,7 +1747,11 @@ def do_it_two_it(args):  # Shia LeBeouf!
         elif args.action == "check":
             return check_email(config=config)
         elif args.action == "reply":
-            return reply(config=config, mailfile=args.mailfile)
+            return reply(
+                config=config,
+                mailfile=args.mailfile,
+                keep_attachments=args.keep_attachments,
+            )
         elif args.action == "reply_all":
             return reply(config=config, mailfile=args.mailfile, reply_all=True)
         elif args.action == "filter":

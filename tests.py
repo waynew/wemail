@@ -115,7 +115,7 @@ def temp_maildir():
 @pytest.fixture()
 def good_config(temp_maildir):
     file = io.StringIO()
-    json.dump({"maildir": temp_maildir}, file)
+    json.dump({"maildir": temp_maildir, "EDITOR": "echo"}, file)
     file.seek(0)
     return file
 
@@ -175,6 +175,13 @@ def args_check(good_config):
 def args_reply(good_config):
     with tempfile.NamedTemporaryFile() as f:
         args = parser.parse_args(["reply", f.name])
+        yield args
+
+
+@pytest.fixture()
+def args_reply_keep_attach(good_config):
+    with tempfile.NamedTemporaryFile() as f:
+        args = parser.parse_args(["reply", f.name, "--keep-attachments"])
         yield args
 
 
@@ -271,7 +278,23 @@ def test_when_action_is_reply_it_should_reply(args_reply, good_loaded_config):
     with patch_reply as fake_reply, patch_config:
         wemail.do_it_two_it(args_reply)
         fake_reply.assert_called_with(
-            config=good_loaded_config, mailfile=args_reply.mailfile
+            config=good_loaded_config,
+            mailfile=args_reply.mailfile,
+            keep_attachments=False,
+        )
+
+
+def test_when_action_is_reply_and_keep_attachment_it_should_be_set(
+    args_reply_keep_attach, good_loaded_config
+):
+    patch_reply = mock.patch("wemail.reply", autospec=True)
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with patch_reply as fake_reply, patch_config:
+        wemail.do_it_two_it(args_reply_keep_attach)
+        fake_reply.assert_called_with(
+            config=good_loaded_config,
+            mailfile=args_reply_keep_attach.mailfile,
+            keep_attachments=True,
         )
 
 
@@ -708,9 +731,7 @@ def test_send_should_override_defaults_with_account_settings_from_config(
 
 
 def test_send_should_move_mailfile_to_sent_after_success(sample_good_mailfile):
-    expected_file = (
-        sample_good_mailfile.parent.parent / "sent" / sample_good_mailfile.name
-    )
+    sent_dir = sample_good_mailfile.parent.parent / "sent"
     expected_text = sample_good_mailfile.read_text()
 
     with mock.patch("wemail.send_message", autospec=True):
@@ -719,8 +740,9 @@ def test_send_should_move_mailfile_to_sent_after_success(sample_good_mailfile):
             mailfile=sample_good_mailfile,
         )
 
-    assert expected_file.exists()
-    actual_text = expected_file.read_text()
+    sent_files = list(sent_dir.iterdir())
+    assert len(sent_files) == 1, sent_files
+    actual_text = sent_files[0].read_text()
     assert actual_text == expected_text
 
 
@@ -745,6 +767,67 @@ def test_reply_email_should_send_when_done_composing_if_told(good_loaded_config)
         wemail.reply(config=good_loaded_config, mailfile=mailfile)
 
         fake_send.assert_called_with(config=good_loaded_config, mailfile=mailfile)
+
+
+def test_reply_email_should_remove_quoted_printable_encoding(good_loaded_config):
+    mailfile = good_loaded_config["maildir"] / "cur" / "fnord.eml"
+    mailfile.write_text(
+        textwrap.dedent(
+            """\
+        From: Person Man <person@example.com>
+        To: Triangle Man <triangle@example.com>
+        Content-Transfer-Encoding: quoted-printable
+        Subject: why don't you like me?
+
+        This=20is=20my=20message=20=F0=9F=90=8D
+        """
+        ).strip()
+    )
+    mock_send = mock.patch("wemail.send", autospec=True)
+    with mock.patch("builtins.input", return_value="s"), mock_send as fake_send:
+        wemail.reply(config=good_loaded_config, mailfile=mailfile)
+
+        args, kwargs = fake_send.call_args
+        msg = kwargs["mailfile"]
+        email = wemail._parser.parsebytes(msg.read_bytes())
+        encodings = email.get_all("content-transfer-encoding")
+        assert "quoted-printable" not in encodings, encodings
+        assert "> This is my message \N{SNAKE}" in email.get_content()
+
+
+@pytest.mark.skip
+def test_reply_with_message_that_has_no_plain_text_should_add_it(good_loaded_config):
+    mailfile = good_loaded_config["maildir"] / "cur" / "noplaintext.eml"
+    mailfile.write_text(
+        textwrap.dedent(
+            """\
+        From: Person Man <person@example.com>
+        To: Triangle Man <triangle@example.com>
+        MIME-Version: 1.0
+        Content-Type: multipart/related; boundary="===============0642271926=="
+
+        --===============0642271926==
+        Content-Type: application/json; charset="utf-8"
+        Content-Transfer-Encoding: 7bit
+
+        {"foo": "bar"}
+
+        --===============0642271926==--
+        """
+        )
+    )
+    mock_send = mock.patch("wemail.send", autospec=True)
+    with mock.patch("builtins.input", return_value="s"), mock_send as fake_send:
+        wemail.reply(config=good_loaded_config, mailfile=mailfile)
+
+        args, kwargs = fake_send.call_args
+        msg = kwargs["mailfile"]
+        email = wemail._parser.parsebytes(msg.read_bytes())
+
+        body = email.get_body(("plain",))
+        assert (
+            body == "On a day in the past, Person Man wrote:\n<A message with no text>"
+        )
 
 
 # End reply email tests }}}

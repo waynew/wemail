@@ -51,12 +51,6 @@ def sample_good_mailfile():
         yield mailfile
 
 
-@pytest.fixture(scope="module")
-def testdir():
-    with tempfile.TemporaryDirectory() as dirname:
-        yield dirname
-
-
 @pytest.fixture()
 def test_server():
     try:
@@ -110,6 +104,14 @@ def temp_maildir():
                 f"""{date_header}From: person.man@example.com\nTo: triangle.man@example.com\nSubject: I hate you\n\nLet's have a fight!"""
             )
         yield dirname
+
+
+@pytest.fixture()
+def good_draft(goodheaders):
+    msg = wemail.EmailMessage()
+    for header in goodheaders:
+        msg[header] = goodheaders[header]
+    yield msg
 
 
 @pytest.fixture()
@@ -981,52 +983,45 @@ def test_when_save_is_called_it_should_print_which_message_was_saved(
 # End save email tests }}}
 
 # {{{ commonmark(down) tests
-@pytest.mark.skip
 def test_commonmarkdown_should_produce_marked_multipart_message(good_draft):
-    msg = good_draft.msg
-    msg["X-CommonMark"] = "True"
+    good_draft["X-CommonMark"] = "True"
     plaintext = "This *is* ***my*** message"
     markedtext = mistletoe.markdown(plaintext)
-    msg.set_content(plaintext)
-    expected_plaintext = msg.get_content()
-    msg = wemail.commonmarkdown(msg)
+    good_draft.set_content(plaintext)
+    expected_plaintext = good_draft.get_content()
+    msg = wemail.commonmarkdown(good_draft)
     assert msg.get_body(("html",)).get_payload() == markedtext
     assert msg.get_body(("plain",)).get_payload() == expected_plaintext
 
 
-@pytest.mark.skip
 def test_commonmarkdown_should_strip_x_commonmark_header(good_draft):
-    msg = good_draft.msg
-    msg["X-CommonMark"] = "True"
-    msg = wemail.commonmarkdown(msg)
+    good_draft["X-CommonMark"] = "True"
+    good_draft.set_content("fnord")
+    msg = wemail.commonmarkdown(good_draft)
     assert "X-CommonMark" not in msg
 
 
-@pytest.mark.skip
 def test_if_no_commonmark_header_commonmarkdown_should_return_msg(good_draft):
-    original_msg = good_draft.msg
     # This is just to make sure we don't accidentally add the header to
     # the good_draft
-    assert "X-CommonMark" not in original_msg
+    assert "X-CommonMark" not in good_draft
 
-    msg = wemail.commonmarkdown(original_msg)
+    msg = wemail.commonmarkdown(good_draft)
 
-    assert msg is original_msg
+    assert msg is good_draft
 
 
 # }}}
 
 # {{{ attachify tests
-@pytest.mark.skip
 def test_if_attachify_msg_has_no_attachments_it_should_return_original_msg(good_draft):
-    original_msg = good_draft.msg
     # Double check we don't accidentally add attachments where they're
     # not wanted...
-    assert "Attachment" not in original_msg
+    assert "Attachment" not in good_draft
 
-    msg = wemail.attachify(original_msg)
+    msg = wemail.attachify(good_draft)
 
-    assert msg is original_msg
+    assert msg is good_draft
 
 
 # }}}
@@ -1046,3 +1041,17 @@ def test_when_action_prompt_not_in_valid_input_it_should_prompt_again(capsys):
 
 
 # }}} end action_prompt test
+
+# {{{ Decode subject test
+
+
+def test_when_subject_is_encoded_it_should_be_properly_decoded():
+    encoded_subject = "Subject: =?iso-8859-1?q?p=F6stal?="
+    expected_subject = "Subject: p\xf6stal"
+
+    actual_subject = wemail.decode_subject(encoded_subject)
+
+    assert actual_subject == expected_subject
+
+
+# }}}

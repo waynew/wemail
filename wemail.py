@@ -261,10 +261,11 @@ def attachify(msg):
                 disposition = "inline"
             elif key.lower() in ("name", "filename"):
                 name = ast.literal_eval(val)
+        part = EmailMessage(policy=POLICY)
         if type_ is None or type_.startswith("application/"):
             part = MIMEApplication(filename.read_bytes(), policy=POLICY, name=name)
         elif type_.startswith("text/"):
-            part = MIMEText(filename.read_text(), policy=POLICY)
+            part.set_content(filename.read_text())
         elif type_.startswith("audio/"):
             part = MIMEAudio(filename.read_bytes(), policy=POLICY, name=name)
         elif type_.startswith("image/"):

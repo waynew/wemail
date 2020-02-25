@@ -1024,6 +1024,21 @@ def test_if_attachify_msg_has_no_attachments_it_should_return_original_msg(good_
     assert msg is good_draft
 
 
+def test_attachify_should_attach_text_file_with_proper_type(good_draft):
+    with tempfile.TemporaryDirectory() as td:
+        file = pathlib.Path(td, "fnord.txt")
+        expected_content = "this is some text\n"
+        file.write_text(expected_content)
+        good_draft["Attachment"] = str(file)
+
+        msg = wemail.attachify(good_draft)
+
+        attachment = next(msg.iter_attachments())
+
+        assert attachment.get_content_type() == "text/plain"
+        assert attachment.get_content() == expected_content
+
+
 # }}}
 
 # {{{ action_prompt test

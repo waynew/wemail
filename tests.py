@@ -1030,3 +1030,19 @@ def test_if_attachify_msg_has_no_attachments_it_should_return_original_msg(good_
 
 
 # }}}
+
+# {{{ action_prompt test
+
+
+def test_when_action_prompt_not_in_valid_input_it_should_prompt_again(capsys):
+    bad_input = "p"
+    good_input = "s"
+    expected_out = f"{bad_input!r} not a valid input.\n"
+    with mock.patch("builtins.input", side_effect=[bad_input, good_input]):
+        wemail.action_prompt()
+    captured = capsys.readouterr()
+
+    assert captured.out == expected_out
+
+
+# }}} end action_prompt test

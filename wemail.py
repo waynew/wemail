@@ -238,8 +238,9 @@ def attachify(msg):
     If attachment filename does not exist, raise WEmailAttachmentNotFound.
     """
     related_msg = _parser.parsebytes(msg.as_bytes())
-    related_msg.make_mixed()
-    related_msg.preamble = "This is a MIME-formatted multi-part message."
+    if not related_msg.is_multipart():
+        related_msg.make_mixed()
+        related_msg.preamble = "This is a MIME-formatted multi-part message."
     attachments = related_msg.get_all("Attachment")
 
     if attachments is None:
@@ -282,11 +283,33 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
     followed by `From`. If `all_recipients` is ``True``, add every
     recipient to the list(s) they were in.
     """
-    if keep_attachments or msg.get_body(("plain", "html")) is None:
-        reply = _parser.parsebytes(msg.as_bytes())
-    else:
-        reply = _parser.parsebytes(msg.get_body(("plain", "html")).as_bytes())
+    msg = _parser.parsebytes(msg.as_bytes())
+    reply = EmailMessage(policy=POLICY)
+    reply["From"] = sender
 
+    try:
+        from_addr = msg.get("From").addresses[0]
+        msg_sender = from_addr.display_name or str(from_addr)
+    except IndexError:
+        msg_sender = "Unknown"
+
+    if reply_all:
+        to_recipients = getaddresses(msg.get_all("From", []) + msg.get_all("To", []))
+        cc_recipients = getaddresses(msg.get_all("Cc", []))
+        sender_addr = getaddresses([sender])[0]
+        if to_recipients:
+            if sender_addr in to_recipients:
+                to_recipients.remove(sender_addr)
+            reply["To"] = ", ".join(formataddr(addr) for addr in to_recipients)
+        if cc_recipients:
+            if sender_addr in cc_recipients:
+                cc_recipients.remove(sender_addr)
+            reply["Cc"] = ", ".join(formataddr(addr) for addr in cc_recipients)
+    else:
+        for fromaddr in msg.get_all("Reply-To", msg.get_all("From", [])):
+            reply["To"] = fromaddr
+
+    reply["Subject"] = "Re: " + msg.get("subject", "")
     date = "a day in the past"
     try:
         date = parsedate_to_datetime(msg["Date"]) or date
@@ -298,9 +321,25 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
         date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
 
     try:
-        body = reply.get_body().get_payload(decode=True).decode()
-    except AttributeError:
-        body = ""
+        msg_body = msg.get_body(("plain", "html")).get_payload(decode=True).decode()
+        reply_body = "> " + msg_body.replace("\n", "\n> ")
+    except (KeyError, AttributeError) as e:
+        reply_body = "<A message with no text>"
+
+    reply.set_content(f"On {date}, {msg_sender} wrote:\n{reply_body}")
+
+    if keep_attachments and any(msg.iter_attachments()):
+        if not reply.is_multipart():
+            reply.make_mixed()
+        for attachment in msg.iter_attachments():
+            reply.attach(attachment)
+
+    return reply
+
+    if keep_attachments or msg.get_body(("plain", "html")) is None:
+        reply = _parser.parsebytes(msg.as_bytes())
+    else:
+        reply = _parser.parsebytes(msg.get_body(("plain", "html")).as_bytes())
 
     try:
         from_addr = msg.get("From").addresses[0]

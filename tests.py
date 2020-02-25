@@ -825,7 +825,6 @@ def test_reply_email_should_remove_quoted_printable_encoding(good_loaded_config)
         assert "> This is my message \N{SNAKE}" in email.get_content()
 
 
-@pytest.mark.skip
 def test_reply_with_message_that_has_no_plain_text_should_add_it(good_loaded_config):
     mailfile = good_loaded_config["maildir"] / "cur" / "noplaintext.eml"
     mailfile.write_text(
@@ -856,7 +855,8 @@ def test_reply_with_message_that_has_no_plain_text_should_add_it(good_loaded_con
 
         body = email.get_body(("plain",))
         assert (
-            body == "On a day in the past, Person Man wrote:\n<A message with no text>"
+            body.get_content()
+            == "On a day in the past, Person Man wrote:\n<A message with no text>\n"
         )
 
 

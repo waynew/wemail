@@ -1039,6 +1039,76 @@ def test_attachify_should_attach_text_file_with_proper_type(good_draft):
         assert attachment.get_content() == expected_content
 
 
+def test_attachify_with_no_guessed_type_should_attach_as_application_octet_stream(
+    good_draft
+):
+    with tempfile.TemporaryDirectory() as td:
+        file = pathlib.Path(td, "fnord.bar")
+        expected_content = b"this is some content"
+        file.write_bytes(expected_content)
+        good_draft["Attachment"] = str(file)
+
+        msg = wemail.attachify(good_draft)
+
+        attachment = next(msg.iter_attachments())
+
+        assert attachment.get_content_type() == "application/octet-stream"
+        assert attachment.get_content() == expected_content
+
+
+def test_attachify_with_inline_image_file_should_attach_it_inline(good_draft):
+    with tempfile.TemporaryDirectory() as td:
+        file = pathlib.Path(td, "fnord.png")
+        png_header = b"\x89PNG\x0d\n\x1a\n"
+        expected_content = png_header + b"not a real png"
+        file.write_bytes(expected_content)
+        good_draft["Attachment"] = f"{str(file)}; inline=True"
+
+        msg = wemail.attachify(good_draft)
+
+        attachment = next(msg.iter_attachments())
+
+        assert attachment.get_content_type() == "image/png"
+        assert attachment.get_content() == expected_content
+        assert attachment.get_content_disposition() == "inline"
+
+
+def test_attachify_with_noninline_image_file_should_regular_attach_it(good_draft):
+    with tempfile.TemporaryDirectory() as td:
+        file = pathlib.Path(td, "fnord.png")
+        png_header = b"\x89PNG\x0d\n\x1a\n"
+        expected_content = png_header + b"not a real png"
+        expected_filename = "fizzy.png"
+        file.write_bytes(expected_content)
+        good_draft["Attachment"] = f'{str(file)}; inline=False; name="fizzy.png"'
+
+        msg = wemail.attachify(good_draft)
+
+        attachment = next(msg.iter_attachments())
+
+        assert attachment.get_content_type() == "image/png"
+        assert attachment.get_content() == expected_content
+        assert attachment.get_content_disposition() == "attachment"
+        assert attachment.get_filename() == expected_filename
+
+
+def test_attachify_with_audio_file_should_attach_with_audio(good_draft):
+    with tempfile.TemporaryDirectory() as td:
+        file = pathlib.Path(td, "fnord.wav")
+        expected_content = b"RIFF$\0\0\0WAVEfmt \n\0\0\0\x01\0\x01\0D\xc2\0\0\x88X\x01\0\x02\0\n0data\0\0\0\0"
+        file.write_bytes(expected_content)
+        good_draft["Attachment"] = f"{str(file)}"
+
+        msg = wemail.attachify(good_draft)
+
+        attachment = next(msg.iter_attachments())
+
+        assert attachment.get_content_type() == "audio/x-wav"
+        assert attachment.get_content() == expected_content
+        assert attachment.get_content_disposition() == "attachment"
+        assert attachment.get_filename() == file.name
+
+
 # }}}
 
 # {{{ action_prompt test

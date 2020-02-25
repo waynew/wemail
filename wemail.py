@@ -252,6 +252,7 @@ def attachify(msg):
         filename = Path(filename).expanduser().resolve()
         name = filename.name
         type_, encoding = mimetypes.guess_type(filename.name)
+        maintype, _, subtype = (type_ or "application/octet-stream").partition("/")
         disposition = "attachment"
         for bit in extra:
             key, _, val = bit.strip().partition("=")
@@ -262,15 +263,13 @@ def attachify(msg):
             elif key.lower() in ("name", "filename"):
                 name = ast.literal_eval(val)
         part = EmailMessage(policy=POLICY)
-        if type_ is None or type_.startswith("application/"):
-            part = MIMEApplication(filename.read_bytes(), policy=POLICY, name=name)
-        elif type_.startswith("text/"):
-            part.set_content(filename.read_text())
-        elif type_.startswith("audio/"):
-            part = MIMEAudio(filename.read_bytes(), policy=POLICY, name=name)
-        elif type_.startswith("image/"):
-            part = MIMEImage(filename.read_bytes(), policy=POLICY, name=name)
-        part.add_header("Content-Disposition", disposition, filename=name)
+        part.set_content(
+            filename.read_bytes(),
+            filename=name,
+            maintype=maintype,
+            subtype=subtype,
+            disposition=disposition,
+        )
         part.add_header("Content-ID", f"<{name}>")
         part.add_header("X-Attachment-Id", name)
         related_msg.attach(part)

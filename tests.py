@@ -115,6 +115,12 @@ def good_draft(goodheaders):
 
 
 @pytest.fixture()
+def good_attachment_email(good_draft):
+    good_draft.add_attachment("This is some text")
+    yield good_draft
+
+
+@pytest.fixture()
 def good_config(temp_maildir):
     file = io.StringIO()
     json.dump({"maildir": temp_maildir, "EDITOR": "echo"}, file)
@@ -769,6 +775,28 @@ def test_reply_email_should_send_when_done_composing_if_told(good_loaded_config)
         wemail.reply(config=good_loaded_config, mailfile=mailfile)
 
         fake_send.assert_called_with(config=good_loaded_config, mailfile=mailfile)
+
+
+def test_reply_should_keep_attachment_if_told(
+    good_attachment_email, good_loaded_config
+):
+    mailfile = good_loaded_config["maildir"] / "cur" / "fnord.eml"
+    mailfile.write_bytes(good_attachment_email.as_bytes())
+    mock_send = mock.patch("wemail.send", autospec=True)
+    with mock.patch("builtins.input", return_value="s"), mock_send as fake_send:
+        wemail.reply(
+            config=good_loaded_config, mailfile=mailfile, keep_attachments=True
+        )
+
+        args, kwargs = fake_send.call_args
+        msg = kwargs["mailfile"]
+        email = wemail._parser.parsebytes(msg.read_bytes())
+        print(email)
+
+        attachment = next(email.iter_attachments())
+        expected_attachment = next(good_attachment_email.iter_attachments())
+
+        assert attachment.get_content() == expected_attachment.get_content()
 
 
 def test_reply_email_should_remove_quoted_printable_encoding(good_loaded_config):

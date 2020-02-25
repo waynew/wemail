@@ -309,7 +309,10 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
         msg_sender = "Unknown"
 
     for part in reply.walk():
-        if part.get_content_type() == "text/plain":
+        if (
+            part.get_content_type() == "text/plain"
+            and part.get_content_disposition() != "attachment"
+        ):
             part.set_content(
                 f"On {date}, {msg_sender} wrote:\n> " + body.replace("\n", "\n> ")
             )

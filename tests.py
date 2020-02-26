@@ -449,6 +449,19 @@ def test_when_no_action_is_on_args_it_should_get_help():
         wemail.do_it_now([])
 
 
+def test_when_action_is_set_to_something_valid_it_should_do_it():
+    argv = ["list"]
+    expected = wemail.make_parser().parse_args(argv)
+    with mock.patch("wemail.do_it_two_it") as fake_do_it:
+        wemail.do_it_now(argv)
+
+        actual = fake_do_it.call_args[0][0]
+
+        assert actual.action == expected.action
+        assert actual.config.name == expected.config.name
+        assert actual.version == expected.version
+
+
 # end action test }}}
 
 

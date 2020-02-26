@@ -1407,3 +1407,56 @@ def test_get_msg_date_should_use_present_timezone_if_present_on_date(temp_maildi
 
 
 # }}} end get_msg_date tests
+
+# {{{ pretty_recipients tests
+
+
+def test_if_no_to_cc_or_bcc_in_message_there_should_be_nothing():
+    msg = wemail.EmailMessage()
+    recipients = list(wemail.pretty_recipients(msg))
+    assert recipients == []
+
+
+def test_if_to_recipients_exist_they_should_be_returned():
+    msg = wemail.EmailMessage()
+    msg[
+        "To"
+    ] = "Person Man <person(my)man+whatever@example.com>, Noob <noob@example.com>"
+    recipients = list(wemail.pretty_recipients(msg))
+    assert recipients == [f'To: {msg["To"]}']
+
+
+def test_if_cc_recipients_exist_they_should_be_returned():
+    msg = wemail.EmailMessage()
+    msg[
+        "Cc"
+    ] = "Person Man <person(my)man+whatever@example.com>, Noob <noob@example.com>"
+    recipients = list(wemail.pretty_recipients(msg))
+    assert recipients == [f'Cc: {msg["Cc"]}']
+
+
+def test_if_bcc_recipients_exist_they_should_be_returned():
+    msg = wemail.EmailMessage()
+    msg[
+        "Bcc"
+    ] = "Person Man <person(my)man+whatever@example.com>, Noob <noob@example.com>"
+    recipients = list(wemail.pretty_recipients(msg))
+    assert recipients == [f'Bcc: {msg["Bcc"]}']
+
+
+def test_if_all_recipients_exist_they_should_be_returned():
+    msg = wemail.EmailMessage()
+    msg[
+        "To"
+    ] = "Person Man <person(my)man+whatever@example.com>, Noob <noob@example.com>"
+    msg[
+        "Cc"
+    ] = "Person Man <person(my)man+whatever@example.com>, Noob <noob@example.com>"
+    msg[
+        "Bcc"
+    ] = "Person Man <person(my)man+whatever@example.com>, Noob <noob@example.com>"
+    recipients = list(wemail.pretty_recipients(msg))
+    assert recipients == [f'To: {msg["To"]}', f'Cc: {msg["Cc"]}', f'Bcc: {msg["Bcc"]}']
+
+
+# }}} end pretty_recipients tests

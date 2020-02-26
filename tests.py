@@ -123,7 +123,17 @@ def good_attachment_email(good_draft):
 @pytest.fixture()
 def good_config(temp_maildir):
     file = io.StringIO()
-    json.dump({"maildir": temp_maildir, "EDITOR": "echo"}, file)
+    json.dump(
+        {
+            "maildir": temp_maildir,
+            "EDITOR": "echo",
+            "roscivs@indessed.example.com": {
+                "from": "Roscivs Bottia <roscivs@indessed.example.com>"
+            },
+            "no.from@example.com": {},
+        },
+        file,
+    )
     file.seek(0)
     return file
 
@@ -1206,3 +1216,60 @@ def test_when_subject_is_encoded_it_should_be_properly_decoded():
 
 
 # }}}
+
+# {{{ get_sender tests
+
+
+def test_when_only_one_recipient_it_should_be_returned(good_loaded_config):
+    msg = wemail._parser.parsebytes(
+        textwrap.dedent(
+            """\
+        To: Foo Man <test(whatever)@example.com>'
+    """
+        ).encode()
+    )
+
+    actual = wemail.get_sender(msg=msg, config=good_loaded_config)
+
+    assert actual == "Foo Man <test@example.com>"
+
+
+def test_when_more_than_one_recipient_with_one_found_in_config_it_should_use_config(
+    good_loaded_config
+):
+    msg = wemail.EmailMessage()
+    msg[
+        "To"
+    ] = "foo@bar.example.com, Roscivs Le Bottia <roscivs@indessed(not you).example.com>"
+
+    actual = wemail.get_sender(msg=msg, config=good_loaded_config)
+
+    assert actual == good_loaded_config["roscivs@indessed.example.com"]["from"]
+
+
+def test_when_recipient_in_config_has_no_from_set_it_should_fallback_to_provided_email(
+    good_loaded_config
+):
+    msg = wemail.EmailMessage()
+    msg["To"] = "foo@bar.example.com, Nowhere Man <no(whatever).from@example.com>"
+
+    actual = wemail.get_sender(msg=msg, config=good_loaded_config)
+
+    assert actual == "Nowhere Man <no.from@example.com>"
+
+
+def test_when_multiple_recipients_are_found_in_config_it_should_ask_which_to_use(
+    good_loaded_config
+):
+    msg = wemail.EmailMessage()
+    msg[
+        "To"
+    ] = "foo@bar.example.com, Nowhere Man <no(whatever).from@example.com>, roscivs@indessed.example.com"
+
+    with mock.patch("builtins.input", side_effect=["9", "2"]):
+        actual = wemail.get_sender(msg=msg, config=good_loaded_config)
+
+    assert actual == good_loaded_config["roscivs@indessed.example.com"]["from"]
+
+
+# }}} end get_sender tests

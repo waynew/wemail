@@ -313,8 +313,6 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
     date = "a day in the past"
     try:
         date = parsedate_to_datetime(msg["Date"]) or date
-    except KeyError:
-        pass
     except TypeError:
         date = msg["Date"] or date
     else:
@@ -405,11 +403,24 @@ def get_sender(*, msg, config):
     if len(all_recipients) > 1:
         for name, addr in all_recipients:
             if addr in config:
-                recipients.add((name, addr))
-        # TODO: This requires manual removal of the extra "From" addresses -W. Werner, 2019-06-19
-        # We should prompt and ask the user which one they want to use...
-        sender = ", ".join(formataddr(a) for a in recipients)
+                recipients.add(config[addr].get("from", formataddr((name, addr))))
+        recipients = list(sorted(recipients))
+        if len(recipients) == 1:
+            return recipients[0]
+        else:
+            done = False
+            while not done:
+                choice = input(f"Which address? [1-{len(recipients)} (^C quits)]: ")
+                try:
+                    recipient = recipients[int(choice) - 1]
+                except (IndexError, ValueError):
+                    print(f"Invalid choice {choice!r}")
+                else:
+                    done = True
+            return recipient
     else:
+        print(msg["To"])
+        print(all_recipients)
         sender = formataddr(all_recipients[0])
     return sender
 
@@ -558,7 +569,7 @@ def do_new(config):
         try:
             template = templates[int(choice) - 1]
         except (IndexError, ValueError):
-            print("Invalid choice {choice!r}")
+            print(f"Invalid choice {choice!r}")
         else:
             done = True
     draft = create_draft(template=template.content, config=config)

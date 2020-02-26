@@ -408,9 +408,12 @@ def get_sender(*, msg, config):
         if len(recipients) == 1:
             return recipients[0]
         else:
+            print("Found multiple possible senders:")
+            for i, r in enumerate(recipients, start=1):
+                print(f"{i}. {r}")
             done = False
             while not done:
-                choice = input(f"Which address? [1-{len(recipients)} (^C quits)]: ")
+                choice = input(f"Use which address? [1-{len(recipients)}]: ")
                 try:
                     recipient = recipients[int(choice) - 1]
                 except (IndexError, ValueError):

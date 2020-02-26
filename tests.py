@@ -2,6 +2,8 @@ import io
 import datetime
 import json
 import pathlib
+import ssl
+import pkg_resources
 import smtplib
 import tempfile
 import textwrap
@@ -15,6 +17,7 @@ from email.utils import getaddresses
 from unittest import mock
 
 from aiosmtpd.controller import Controller
+from aiosmtpd.smtp import SMTP as SMTPProtocol, syntax
 
 
 class MyHandler:
@@ -24,6 +27,13 @@ class MyHandler:
     async def handle_DATA(self, server, session, envelope):
         self.box.append(envelope)
         return "250 OK"
+
+    async def handle_AUTH(self, server, session, envelope, protocol, credentials):
+        return "235 2.7.0  Authentication Suceeded, woo woo"
+
+    async def handle_EHLO(self, server, session, envelope, hostname):
+        session.host_name = hostname
+        return "250-AUTH PLAIN\n250-STARTTLS\n250 HELP"
 
 
 parser = wemail.make_parser()
@@ -56,6 +66,42 @@ def test_server():
     try:
         handler = MyHandler()
         controller = Controller(handler, port=8173)
+        controller.handler = handler
+        controller.start()
+        yield controller
+    finally:
+        controller.stop()
+
+
+@pytest.fixture()
+def ssl_test_server():
+    try:
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(
+            pkg_resources.resource_filename("util", "server.crt"),
+            pkg_resources.resource_filename("util", "server.key"),
+        )
+
+        class Proto(SMTPProtocol):
+            @syntax("AUTH protocol data")
+            async def smtp_AUTH(self, arg):
+                if not arg:
+                    await self.push("250 AUTH PLAIN")
+                else:
+                    await self.push("235 2.7.0  Authentication Suceeded, woo woo")
+
+        handler = MyHandler()
+
+        class TLSController(Controller):
+            def factory(self):
+                return Proto(
+                    self.handler,
+                    decode_data=False,
+                    require_starttls=False,
+                    tls_context=ssl_context,
+                )
+
+        controller = TLSController(handler, port=8874)
         controller.handler = handler
         controller.start()
         yield controller
@@ -689,6 +735,29 @@ def test_send_email_should_send_provided_email(sample_good_mailfile, test_server
     assert actual_message.get_payload() == expected_message.get_payload()
 
 
+def test_send_email_with_use_ssl_should_send_provided_email(
+    sample_good_mailfile, ssl_test_server
+):
+    config = {
+        "SMTP_HOST": ssl_test_server.hostname,
+        "SMTP_PORT": ssl_test_server.port,
+        "SMTP_USERNAME": "fnord",
+        "SMTP_PASSWORD": "fnord",
+        "SMTP_USE_TLS": True,
+        "maildir": sample_good_mailfile.parent.parent,
+    }
+
+    expected_message = wemail._parser.parsebytes(sample_good_mailfile.read_bytes())
+    wemail.send(config=config, mailfile=sample_good_mailfile)
+
+    actual_message = wemail._parser.parsebytes(ssl_test_server.handler.box[0].content)
+
+    for header in ("from", "to", "subject"):
+        assert actual_message[header] == expected_message[header]
+
+    assert actual_message.get_payload() == expected_message.get_payload()
+
+
 def test_send_should_display_sending_status(capsys, sample_good_mailfile):
     expected_message = 'Sending "why don\'t you like me?" to Triangle Man <triangle@example.com> ... OK\n'
 
@@ -1259,17 +1328,30 @@ def test_when_recipient_in_config_has_no_from_set_it_should_fallback_to_provided
 
 
 def test_when_multiple_recipients_are_found_in_config_it_should_ask_which_to_use(
-    good_loaded_config
+    capsys, good_loaded_config
 ):
     msg = wemail.EmailMessage()
     msg[
         "To"
     ] = "foo@bar.example.com, Nowhere Man <no(whatever).from@example.com>, roscivs@indessed.example.com"
 
-    with mock.patch("builtins.input", side_effect=["9", "2"]):
+    with mock.patch("builtins.input", side_effect=["9", "2"]) as fake_input:
         actual = wemail.get_sender(msg=msg, config=good_loaded_config)
+        fake_input.assert_has_calls(
+            [
+                mock.call("Use which address? [1-2]: "),
+                mock.call("Use which address? [1-2]: "),
+            ]
+        )
 
+    captured = capsys.readouterr()
     assert actual == good_loaded_config["roscivs@indessed.example.com"]["from"]
+    assert (
+        captured.out == "Found multiple possible senders:\n"
+        "1. Nowhere Man <no.from@example.com>\n"
+        "2. Roscivs Bottia <roscivs@indessed.example.com>\n"
+        "Invalid choice '9'\n"
+    )
 
 
 # }}} end get_sender tests

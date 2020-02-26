@@ -878,6 +878,24 @@ def test_replyify_with_no_sender_should_set_unknown_to_sender():
     assert "Unknown wrote" in msg.get_content()
 
 
+def test_replify_with_reply_all_should_to_the_sender_and_cc_other_recipients(
+    good_draft
+):
+    good_draft["Cc"] = "test1@example.com, test2@example.com, fnord@example.com"
+
+    response = wemail.replyify(msg=good_draft, sender=good_draft["to"], reply_all=True)
+
+    to_recipients = wemail.getaddresses(response.get_all("to", []))
+    cc_recipients = wemail.getaddresses(response.get_all("cc", []))
+
+    assert to_recipients == [("", "roscivs@indessed.example.com")]
+    assert cc_recipients == [
+        ("", "test1@example.com"),
+        ("", "test2@example.com"),
+        ("", "fnord@example.com"),
+    ]
+
+
 # End reply email tests }}}
 
 # {{{ Custom header tests

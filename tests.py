@@ -881,7 +881,9 @@ def test_replyify_with_no_sender_should_set_unknown_to_sender():
 def test_replify_with_reply_all_should_to_the_sender_and_cc_other_recipients(
     good_draft
 ):
-    good_draft["Cc"] = "test1@example.com, test2@example.com, fnord@example.com"
+    good_draft[
+        "Cc"
+    ] = f"test1@example.com, test2@example.com, fnord@example.com, {good_draft['to']}"
 
     response = wemail.replyify(msg=good_draft, sender=good_draft["to"], reply_all=True)
 

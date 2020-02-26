@@ -1355,3 +1355,42 @@ def test_when_multiple_recipients_are_found_in_config_it_should_ask_which_to_use
 
 
 # }}} end get_sender tests
+
+# {{{ get_msg_date tests
+
+
+def test_get_msg_date_should_provide_utc_if_tzinfo_not_on_date(temp_maildir):
+    file = pathlib.Path(temp_maildir, "fnord.eml")
+    file.write_text(
+        textwrap.dedent(
+            """\
+        From: whoever
+        To: whoever
+        Subject: whatever
+        Date: Sat, 8 Jun 2019 11:45:15
+        """
+        )
+    )
+    date = wemail.get_msg_date(file)
+
+    assert date.tzinfo == wemail.timezone.utc
+
+
+def test_get_msg_date_should_use_present_timezone_if_present_on_date(temp_maildir):
+    file = pathlib.Path(temp_maildir, "fnord.eml")
+    file.write_text(
+        textwrap.dedent(
+            """\
+        From: whoever
+        To: whoever
+        Subject: whatever
+        Date: Sat, 8 Jun 2019 11:45:15 -0600
+        """
+        )
+    )
+    date = wemail.get_msg_date(file)
+
+    assert date.tzinfo == wemail.timezone(datetime.timedelta(hours=-6))
+
+
+# }}} end get_msg_date tests

@@ -860,6 +860,24 @@ def test_reply_with_message_that_has_no_plain_text_should_add_it(good_loaded_con
         )
 
 
+def test_replyify_with_no_sender_should_set_unknown_to_sender():
+    msg = wemail.replyify(
+        msg=wemail._parser.parsebytes(
+            textwrap.dedent(
+                """\
+        To: someone@example.com
+        Subject: Awesome
+
+        Nobody sent this.
+    """
+            ).encode()
+        ),
+        sender="whatever@example.com",
+    )
+
+    assert "Unknown wrote" in msg.get_content()
+
+
 # End reply email tests }}}
 
 # {{{ Custom header tests

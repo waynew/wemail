@@ -290,7 +290,7 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
     try:
         from_addr = msg.get("From").addresses[0]
         msg_sender = from_addr.display_name or str(from_addr)
-    except IndexError:
+    except AttributeError:
         msg_sender = "Unknown"
 
     if reply_all:
@@ -333,61 +333,6 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
             reply.make_mixed()
         for attachment in msg.iter_attachments():
             reply.attach(attachment)
-
-    return reply
-
-    if keep_attachments or msg.get_body(("plain", "html")) is None:
-        reply = _parser.parsebytes(msg.as_bytes())
-    else:
-        reply = _parser.parsebytes(msg.get_body(("plain", "html")).as_bytes())
-
-    try:
-        from_addr = msg.get("From").addresses[0]
-        msg_sender = from_addr.display_name or str(from_addr)
-    except IndexError:
-        msg_sender = "Unknown"
-
-    for part in reply.walk():
-        if (
-            part.get_content_type() == "text/plain"
-            and part.get_content_disposition() != "attachment"
-        ):
-            part.set_content(
-                f"On {date}, {msg_sender} wrote:\n> " + body.replace("\n", "\n> ")
-            )
-            break
-        # TODO: Need to completely rehash replyifying emails to build an email from email parts -W. Werner, 2020-02-07
-    del reply["Subject"]
-    reply["Subject"] = "Re: " + msg.get("subject", "")
-
-    for field in SKIPPED_HEADERS:
-        try:
-            del reply[field]
-        except KeyError:
-            pass
-    if reply_all:
-        to_recipients = getaddresses(msg.get_all("From", []) + msg.get_all("To", []))
-        cc_recipients = getaddresses(msg.get_all("Cc", []))
-        sender_addr = getaddresses([sender])[0]
-        if to_recipients:
-            if sender_addr in to_recipients:
-                to_recipients.remove(sender_addr)
-            reply["To"] = ", ".join(formataddr(addr) for addr in to_recipients)
-        if cc_recipients:
-            if sender_addr in cc_recipients:
-                cc_recipients.remove(sender_addr)
-            reply["Cc"] = ", ".join(formataddr(addr) for addr in cc_recipients)
-    else:
-        for fromaddr in msg.get_all("Reply-To", msg.get_all("From", [])):
-            reply["To"] = fromaddr
-
-    try:
-        del reply["From"]
-    except KeyError:
-        # Replying when you don't have an original sender? That's weird
-        pass
-    finally:
-        reply["From"] = sender
 
     return reply
 

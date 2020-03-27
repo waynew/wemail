@@ -275,6 +275,12 @@ def args_version(good_config):
 
 
 @pytest.fixture()
+def args_raw():
+    args = parser.parse_args(["raw", "1"])
+    return args
+
+
+@pytest.fixture()
 def args_save():
     args = parser.parse_args(["save", "1", "--folder", "saved-messages"])
     return args
@@ -408,6 +414,15 @@ def test_when_action_is_list_it_should_list(args_list, good_loaded_config):
     with patch_list as fake_list, patch_config:
         wemail.do_it_two_it(args_list)
         fake_list.assert_called_with(config=good_loaded_config)
+
+
+def test_when_action_is_raw_it_should_raw(args_raw, good_loaded_config):
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    with mock.patch("wemail.raw", autospec=True) as fake_do_raw, patch_config:
+        wemail.do_it_two_it(args_raw)
+        fake_do_raw.assert_called_with(
+            config=good_loaded_config, mailnumber=args_raw.mailnumber
+        )
 
 
 def test_when_action_is_save_it_should_save(args_save, good_loaded_config):

@@ -478,6 +478,20 @@ def test_get_templates_with_empty_dir_should_return_no_templates():
         assert actual_templates == no_templates
 
 
+def test_get_templates_with_broken_template_should_display_message(capsys):
+    expected_name = "something.eml"
+    with tempfile.TemporaryDirectory() as dirname:
+        pathlib.Path(dirname, expected_name).mkdir()
+
+        actual_templates = wemail.get_templates(dirname=dirname)
+
+    captured = capsys.readouterr()
+    out = captured.out
+
+    assert f"Failed to read template {expected_name}\n" == out
+    assert actual_templates == []
+
+
 # I don't know for sure if we want to use the filename as the template
 # name, but at least for now it works well. - W. Werner
 def test_get_templates_with_one_template_should_return_that_template():

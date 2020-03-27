@@ -336,10 +336,7 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
 
 
 def forwardify(*, msg, sender, keep_attachments=False):
-    if not keep_attachments:
-        fwd_msg = _parser.parsebytes(msg.get_body(("plain", "html")).as_bytes())
-    else:
-        fwd_msg = _parser.parsebytes(msg.as_bytes())
+    fwd_msg = EmailMessage(policy=POLICY)
 
     for header in SKIPPED_HEADERS:
         try:
@@ -361,7 +358,7 @@ def forwardify(*, msg, sender, keep_attachments=False):
     fwd_msg["From"] = sender
     fwd_msg["To"] = ""
     fwd_msg["Subject"] = "Fwd: " + msg.get("Subject", "")
-    fwd_msg.get_body(("plain", "html")).set_content(
+    fwd_msg.set_content(
         dedent(
             f"""
         ---------- Forwarded Message ----------
@@ -374,6 +371,8 @@ def forwardify(*, msg, sender, keep_attachments=False):
         + "\n\n"
         + msg.get_body(preferencelist=("plain", "html")).get_content()
     )
+
+    # TODO: Should add attachments here, if kept -W. Werner, 2020-03-27
     return fwd_msg
 
 

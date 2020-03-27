@@ -1269,6 +1269,24 @@ def test_attachify_with_audio_file_should_attach_with_audio(good_draft):
 
 # }}}
 
+# {{{ forwardify tests
+def test_if_not_keep_attachments_forwardify_should_use_plain_email_first():
+    msg = wemail.EmailMessage()
+    msg["From"] = "test@example.net"
+    msg["To"] = "test@example.com"
+    msg.add_related("this is some plain content")
+    msg.add_related("this is some <b>html</b> content", subtype="html")
+
+    fwd_msg = wemail.forwardify(
+        msg=msg, sender="test@example.com", keep_attachments=False
+    )
+
+    assert "html" not in fwd_msg.get_content()
+    assert "this is some plain content" in fwd_msg.get_content()
+
+
+# }}} end forwardify tests
+
 # {{{ action_prompt test
 
 

@@ -372,7 +372,7 @@ def forwardify(*, msg, sender, keep_attachments=False):
         )
         + "\n".join(l for l in pretty_recipients(msg))
         + "\n\n"
-        + msg.get_body(preferencelist=("related", "plain", "html")).get_content()
+        + msg.get_body(preferencelist=("plain", "html")).get_content()
     )
     return fwd_msg
 

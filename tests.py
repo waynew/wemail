@@ -303,6 +303,17 @@ def args_bad_rm_number():
 # {{{ action tests
 
 
+def test_when_KeyboardInterrupt_is_raised_it_should_print_message_and_gently_quit(
+    capsys, args_new_alone
+):
+    with mock.patch("wemail.load_config", side_effect=KeyboardInterrupt):
+        wemail.do_it_two_it(args_new_alone)
+
+    captured = capsys.readouterr().out
+
+    assert "\n^C caught, bye!\n" == captured
+
+
 def test_when_action_is_new_it_should_do_new(args_new_alone, good_loaded_config):
     patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
     with mock.patch("wemail.do_new", autospec=True) as fake_do_new, patch_config:

@@ -876,7 +876,10 @@ def test_send_should_move_mailfile_to_sent_after_success(sample_good_mailfile):
 # {{{ Reply email tests
 
 
-def test_reply_email_should_send_when_done_composing_if_told(good_loaded_config):
+@pytest.mark.parametrize("name_override", [None, "1"])
+def test_reply_email_should_send_when_done_composing_if_told(
+    good_loaded_config, name_override
+):
     wemail.check_email(good_loaded_config)
 
     mailfile = wemail.sorted_mailfiles(maildir=good_loaded_config["maildir"] / "cur")[0]
@@ -889,7 +892,10 @@ def test_reply_email_should_send_when_done_composing_if_told(good_loaded_config)
     with mock.patch(
         "builtins.input", return_value="s"
     ), mock_send as fake_send, mock_draftname, mock_draftdir:
-        wemail.reply(config=good_loaded_config, mailfile=mailfile)
+        wemail.reply(
+            config=good_loaded_config,
+            mailfile=(mailfile.parent / (name_override or mailfile.name)),
+        )
 
         fake_send.assert_called_with(config=good_loaded_config, mailfile=mailfile)
 

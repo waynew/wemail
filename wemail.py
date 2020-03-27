@@ -63,7 +63,6 @@ POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
 _header_parser = BytesHeaderParser(policy=POLICY)
-SKIPPED_HEADERS = ("To", "Cc", "DKIM-Signature", "Message-ID", "Subject")
 DEFAULT_HEADERS = {"From": "", "To": "", "Subject": ""}
 DISPLAY_HEADERS = ("From", "To", "CC", "Reply-to", "List-Id", "Subject")
 EmailTemplate = collections.namedtuple("EmailTemplate", "name,content")
@@ -338,11 +337,6 @@ def replyify(*, msg, sender, reply_all=False, keep_attachments=False):
 def forwardify(*, msg, sender, keep_attachments=False):
     fwd_msg = EmailMessage(policy=POLICY)
 
-    for header in SKIPPED_HEADERS:
-        try:
-            del fwd_msg[header]
-        except KeyError:
-            pass
     try:
         date = parsedate_to_datetime(msg["Date"])
     except KeyError:

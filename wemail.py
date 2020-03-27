@@ -69,6 +69,14 @@ EmailTemplate = collections.namedtuple("EmailTemplate", "name,content")
 LOCAL_TZ = datetime.now(timezone.utc).astimezone().tzinfo
 
 
+class WEmailError(Exception):
+    pass
+
+
+class WEmailDeliveryError(WEmailError):
+    pass
+
+
 def make_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -339,16 +347,10 @@ def forwardify(*, msg, sender, keep_attachments=False):
 
     try:
         date = parsedate_to_datetime(msg["Date"])
-    except KeyError:
-        date = "a day in the past"
     except TypeError:
         date = msg["Date"]
     else:
         date = date.strftime("%a, %B %d, %Y at %H:%M:%S%p %z").rstrip()
-    try:
-        del fwd_msg["From"]
-    except KeyError:
-        pass  # How are you forwarding an email that came from nobody?
     fwd_msg["From"] = sender
     fwd_msg["To"] = ""
     fwd_msg["Subject"] = "Fwd: " + msg.get("Subject", "")

@@ -1270,10 +1270,13 @@ def test_attachify_with_audio_file_should_attach_with_audio(good_draft):
 # }}}
 
 # {{{ forwardify tests
-def test_if_not_keep_attachments_forwardify_should_use_plain_email_first():
+@pytest.mark.parametrize("date", ["Mon, 26 Aug 1984 13:32:02 +0100", None])
+def test_if_not_keep_attachments_forwardify_should_use_plain_email_first(date):
     msg = wemail.EmailMessage()
     msg["From"] = "test@example.net"
     msg["To"] = "test@example.com"
+    if date is not None:
+        msg["Date"] = date
     msg.add_related("this is some plain content")
     msg.add_related("this is some <b>html</b> content", subtype="html")
 

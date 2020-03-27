@@ -64,7 +64,7 @@ CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
 _header_parser = BytesHeaderParser(policy=POLICY)
 DEFAULT_HEADERS = {"From": "", "To": "", "Subject": ""}
-DISPLAY_HEADERS = ("From", "To", "CC", "Reply-to", "List-Id", "Subject")
+DISPLAY_HEADERS = ("From", "To", "CC", "Reply-to", "List-Id", "Date", "Subject")
 EmailTemplate = collections.namedtuple("EmailTemplate", "name,content")
 LOCAL_TZ = datetime.now(timezone.utc).astimezone().tzinfo
 

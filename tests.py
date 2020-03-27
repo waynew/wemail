@@ -730,6 +730,17 @@ def test_list_should_list_the_messages(capsys, good_loaded_config):
 # {{{ Send email tests
 
 
+def test_send_bad_smtpdata_should_raise_delivery_error(sample_good_mailfile):
+    msg = wemail._parser.parsebytes(sample_good_mailfile.read_bytes())
+    with mock.patch("wemail.smtplib.SMTP", autospec=True) as fake_smtp:
+        fake_smtp.return_value.__enter__.return_value.send_message.side_effect = wemail.smtplib.SMTPDataError(
+            42, b"whatever"
+        )
+
+        with pytest.raises(wemail.WEmailDeliveryError):
+            wemail.send_message(msg=mock.MagicMock())
+
+
 def test_send_email_should_send_provided_email(sample_good_mailfile, test_server):
     config = {
         "SMTP_HOST": test_server.hostname,

@@ -58,7 +58,7 @@ except ImportError as e:  # pragma: no cover
             " or commonmark"
         )
 
-__version__ = "0.4.0"
+__version__ = "2020.03.27"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)

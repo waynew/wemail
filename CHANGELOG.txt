@@ -5,13 +5,32 @@ This project uses [CalVer][calver] - YYYY.0M.0D(.MICRO)
 
 ## Unreleased
 
+## [2020.03.27]
+
+### Removed
+
+- Removed older interface.
+
+### Added
+
+- Added ability to call filters - use `"filters": ["command", "arg",
+  "--option"]` in `.wemailrc`. Filters get passed each folder, and a
+  non-zero exit code will abort further processing.
+- Can add `"default_part": "1"` to `.wemailrc` to automatically open the
+  `text/plain` part of the message.
+- `-p/--part` option added to `read`, which overrides the `default_part`
+  option.
+
 ### Changed
 
 - Changed to [CalVer][calver] versioning.
+- Sender address now comes from config.
 
 ### Fixed
 
 - Sent emails now get a pretty name.
+- Space after `Which part?`
+- Date now shows up when reading email.
 
 ## [0.4.0] - 2010-01-17
 

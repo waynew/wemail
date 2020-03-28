@@ -324,7 +324,9 @@ def test_when_action_is_new_it_should_do_new(args_new_alone, good_loaded_config)
     patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
     with mock.patch("wemail.do_new", autospec=True) as fake_do_new, patch_config:
         wemail.do_it_two_it(args_new_alone)
-        fake_do_new.assert_called_with(config=good_loaded_config)
+        fake_do_new.assert_called_with(
+            config=good_loaded_config, template_number=args_new_alone.template_number
+        )
 
 
 def test_when_action_is_send_it_should_send(args_send, good_loaded_config):
@@ -447,6 +449,7 @@ def test_when_action_is_read_it_should_read(args_read, good_loaded_config):
             config=good_loaded_config,
             mailnumber=args_read.mailnumber,
             all_headers=args_read.all_headers,
+            part=args_read.part,
         )
 
 
@@ -1560,6 +1563,31 @@ def test_if_filter_command_return_nonzero_status_code_it_should_abort_filtering(
         wemail.filter_messages(config=good_loaded_config)
 
         fake_run.assert_called_once_with(expected_call, capture_output=True)
+
+
+def test_if_filter_commands_return_0_then_it_should_run_all_filters(good_loaded_config):
+    filters = [["one"], ["three"], ["five"], ["three", "sir"], [], None]
+    good_loaded_config["filters"] = filters
+    expected_folder = good_loaded_config["maildir"] / "boop"
+    expected_calls = [
+        mock.call(f + [str(expected_folder)], capture_output=True) for f in filters if f
+    ]
+
+    with mock.patch(
+        "subprocess.run",
+        autospec=True,
+        return_value=wemail.subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=b"boop", stderr=b"nope"
+        ),
+    ) as fake_run:
+        wemail.filter_messages(config=good_loaded_config, folder=expected_folder.name)
+
+        fake_run.assert_has_calls(expected_calls)
+
+
+def test_if_filters_are_missing_filter_should_not_fail(good_loaded_config):
+    good_loaded_config.pop("filters", None)
+    wemail.filter_messages(config=good_loaded_config)
 
 
 # }}} end filter tests

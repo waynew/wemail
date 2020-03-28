@@ -88,10 +88,15 @@ def make_parser():
         "--version", action="store_true", default=False, help="Print the version."
     )
     subparsers = parser.add_subparsers()
-    action_parser = subparsers.add_parser(
-        "new", help="Create new email from templates."
+    new_parser = subparsers.add_parser("new", help="Create new email from templates.")
+    new_parser.set_defaults(action="new")
+    new_parser.add_argument(
+        "template_number",
+        type=int,
+        nargs="?",
+        default=None,
+        help="Template number to use.",
     )
-    action_parser.set_defaults(action="new")
 
     send_parser = subparsers.add_parser("send", help="Send specific email.")
     send_parser.set_defaults(action="send")
@@ -169,6 +174,13 @@ def make_parser():
     read_parser.add_argument("mailnumber", type=int)
     read_parser.add_argument(
         "--all-headers", help="Provide all headers instead of a limited set."
+    )
+    read_parser.add_argument(
+        "-p",
+        "--part",
+        type=int,
+        default=None,
+        help="Part of the multipart email to read",
     )
 
     raw_parser = subparsers.add_parser("raw", help="Read a raw/original single message")
@@ -552,7 +564,7 @@ def check_email(config):
     print(f'{count} new message{"s" if count != 1 else ""}.')
 
 
-def do_new(config):
+def do_new(config, template_number=None):
     maildir = config["maildir"]
     template_dir = maildir / "templates"
     templates = get_templates(dirname=template_dir)
@@ -563,7 +575,12 @@ def do_new(config):
         print(f"{i}. {template.name}")
     done = False
     while not done:
-        choice = input(f"Which template? [1-{len(templates)} (^C quits)]: ")
+        choice = template_number or input(
+            f"Which template? [1-{len(templates)} (^C quits)]: "
+        )
+        # If cli passed template number, and it was bad, we want to
+        # avoid an infinite loop!
+        template_number = None
         try:
             template = templates[int(choice) - 1]
         except (IndexError, ValueError):
@@ -761,24 +778,28 @@ def read(*, config, mailnumber, all_headers=False, part=None):
         else:
             parts = []
             i = 1
-            for part in msg.walk():
-                content_type = part.get_content_type()
+            for msgpart in msg.walk():
+                content_type = msgpart.get_content_type()
                 if content_type.startswith("multipart/"):
                     print(content_type)
                 else:
-                    parts.append(part)
+                    parts.append(msgpart)
                     print(f"\t{i}. {content_type}")
                     i += 1
-            part = parts[int(input("What part?")) - 1]
-            tempmail.write(part.get_payload(decode=True))
+            msgpart = parts[
+                (part or config.get("default_part") or int(input("What part? "))) - 1
+            ]
+            tempmail.write(msgpart.get_payload(decode=True))
         tempmail.flush()
         subprocess.run([config["EDITOR"], tempmail.name])
 
 
 def filter_messages(*, config, folder=None):
-    folder = folder or (config["maildir"] / "cur")
-    subprocess.run(config["filters"][0] + [str(folder)], capture_output=True)
-    # for filter in config['filters']: subprocess.run(filter)
+    folder = config["maildir"] / (folder or "cur")
+    for filter in (f for f in config.get("filters", []) if f):
+        ret = subprocess.run(filter + [str(folder)], capture_output=True)
+        if ret.returncode:
+            break
 
 
 def update():
@@ -809,7 +830,7 @@ def do_it_two_it(args):  # Shia LeBeouf!
         config = load_config(args.config)
         ensure_maildirs_exist(maildir=config["maildir"])
         if args.action == "new":
-            return do_new(config=config)
+            return do_new(config=config, template_number=args.template_number)
         elif args.action == "send":
             return send(config=config, mailfile=args.mailfile)
         elif args.action == "send_all":
@@ -832,7 +853,10 @@ def do_it_two_it(args):  # Shia LeBeouf!
             return list_messages(config=config)
         elif args.action == "read":
             return read(
-                config=config, mailnumber=args.mailnumber, all_headers=args.all_headers
+                config=config,
+                mailnumber=args.mailnumber,
+                all_headers=args.all_headers,
+                part=args.part,
             )
         elif args.action == "raw":
             return raw(config=config, mailnumber=args.mailnumber)

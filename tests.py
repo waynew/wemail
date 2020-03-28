@@ -1538,3 +1538,28 @@ def test_if_all_recipients_exist_they_should_be_returned():
 
 
 # }}} end pretty_recipients tests
+
+
+# {{{ filter tests
+
+
+def test_if_filter_command_return_nonzero_status_code_it_should_abort_filtering(
+    good_loaded_config
+):
+    expected_call = ["call-me", "maybe", str(good_loaded_config["maildir"] / "cur")]
+    good_loaded_config["filters"] = [expected_call[:-1], ["do not", "call at all"]]
+
+    def side_effect(*args, **kwargs):
+        return wemail.subprocess.CompletedProcess(
+            args=args, returncode=42, stdout=b"boop", stderr=b"nope"
+        )
+
+    with mock.patch(
+        "subprocess.run", autospec=True, side_effect=side_effect
+    ) as fake_run:
+        wemail.filter_messages(config=good_loaded_config)
+
+        fake_run.assert_called_once_with(expected_call, capture_output=True)
+
+
+# }}} end filter tests

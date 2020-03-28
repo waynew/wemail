@@ -776,7 +776,9 @@ def read(*, config, mailnumber, all_headers=False, part=None):
 
 
 def filter_messages(*, config, folder=None):
-    ...
+    folder = folder or (config["maildir"] / "cur")
+    subprocess.run(config["filters"][0] + [str(folder)], capture_output=True)
+    # for filter in config['filters']: subprocess.run(filter)
 
 
 def update():

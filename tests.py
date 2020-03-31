@@ -1547,7 +1547,7 @@ def test_if_all_recipients_exist_they_should_be_returned():
 
 
 def test_if_filter_command_return_nonzero_status_code_it_should_abort_filtering(
-    good_loaded_config
+    capsys, good_loaded_config
 ):
     expected_call = ["call-me", "maybe", str(good_loaded_config["maildir"] / "cur")]
     good_loaded_config["filters"] = [expected_call[:-1], ["do not", "call at all"]]
@@ -1563,9 +1563,16 @@ def test_if_filter_command_return_nonzero_status_code_it_should_abort_filtering(
         wemail.filter_messages(config=good_loaded_config)
 
         fake_run.assert_called_once_with(expected_call, capture_output=True)
+        captured = capsys.readouterr()
+        assert (
+            captured.out
+            == f"{expected_call} exited with code 42.\nSTDOUT:\nboop\n\nSTDERR:\nnope\n\nFiltering aborted.\n"
+        )
 
 
-def test_if_filter_commands_return_0_then_it_should_run_all_filters(good_loaded_config):
+def test_if_filter_commands_return_0_then_it_should_run_all_filters(
+    capsys, good_loaded_config
+):
     filters = [["one"], ["three"], ["five"], ["three", "sir"], [], None]
     good_loaded_config["filters"] = filters
     expected_folder = good_loaded_config["maildir"] / "boop"

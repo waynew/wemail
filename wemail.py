@@ -799,7 +799,11 @@ def filter_messages(*, config, folder=None):
     for filter in (f for f in config.get("filters", []) if f):
         ret = subprocess.run(filter + [str(folder)], capture_output=True)
         if ret.returncode:
-            break
+            print(f"{ret.args[0]} exited with code {ret.returncode}.")
+            print(f"STDOUT:\n{ret.stdout.decode()}\n")
+            print(f"STDERR:\n{ret.stderr.decode()}\n")
+            print(f"Filtering aborted.")
+            return
 
 
 def update():

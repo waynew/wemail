@@ -26,6 +26,6 @@ deploy:
   environment:
     name: deploy-wemail
   script:
-      - twine upload -u $TWINE_USERNAME --repository-url https://upload.pypi.org/legacy/ dist/wemail-*.whl
+      - twine upload -u $TWINE_USERNAME -p $TWINE_PASSWORD -r $TWINE_REPOSITORY --repository-url https://upload.pypi.org/legacy/ dist/wemail-*.whl
   only:
     - tags

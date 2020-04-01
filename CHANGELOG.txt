@@ -3,6 +3,12 @@ a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 This project uses [CalVer][calver] - YYYY.0M.0D(.MICRO)
 
+## [2020.03.31]
+
+### Added
+
+- Added `--wrap` argument for reading emails that are too wide.
+
 ## [2020.03.30]
 
 ### Changed

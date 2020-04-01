@@ -182,6 +182,12 @@ def make_parser():
         default=None,
         help="Part of the multipart email to read",
     )
+    read_parser.add_argument(
+        "--wrap",
+        action="store_true",
+        default=False,
+        help="Wrap message text at 80 or the terminal width, whichever is smaller.",
+    )
 
     raw_parser = subparsers.add_parser("raw", help="Read a raw/original single message")
     raw_parser.set_defaults(action="raw")
@@ -728,6 +734,37 @@ def iter_headers(*, maildir):
         yield headers
 
 
+def wrapped(content):
+    max_width = min(80, shutil.get_terminal_size((80, 24)).columns)
+    new_content = io.StringIO()
+    content = content.decode()
+    printed = 0
+    for i, char in enumerate(content):
+        if char == " ":
+            if i + 1 < len(content) and content[i + 1] == ".":
+                # If the space comes before a period, why bother?
+                continue
+            else:
+                next_space = content.find(" ", i + 1)
+                # It's possible there is no next space. If
+                # this space is the last one and we've already
+                # printed too many characters, it's wrapping time!
+                spaces_until = max(next_space - i, 0)
+                if printed + spaces_until > max_width:
+                    print(file=new_content)
+                    printed = 0
+                else:
+                    print(char, end="", file=new_content)
+        else:
+            print(char, end="", file=new_content)
+            if char == "\n":
+                printed = 0
+            else:
+                printed += 1
+    new_content.seek(0)
+    return new_content.read().encode()
+
+
 def iter_messages(*, maildir):
     """
     Iterate over the messages in maildir, yielding each parsed message.
@@ -756,7 +793,7 @@ def raw(*, config, mailnumber):
     subprocess.run([config["EDITOR"], mailfile.resolve()])
 
 
-def read(*, config, mailnumber, all_headers=False, part=None):
+def read(*, config, mailnumber, all_headers=False, part=None, wrap=False):
     message_iter = iter_messages(maildir=config["maildir"] / "cur")
     # TODO: This works but it doesn't have comprehensive test coverage -W. Werner, 2019-12-06
     # Also there is another issue. If there is a part with a filename, we should try and respect that filename. This should kind of get unwound. Also it's not super effective
@@ -774,7 +811,10 @@ def read(*, config, mailnumber, all_headers=False, part=None):
         tempmail.write(b"\n\n")
 
         if not msg.is_multipart():
-            tempmail.write(msg.get_payload(decode=True))
+            if wrap:
+                tempmail.write(wrapped(msg.get_payload(decode=True)))
+            else:
+                tempmail.write(msg.get_payload(decode=True))
         else:
             parts = []
             i = 1
@@ -789,7 +829,10 @@ def read(*, config, mailnumber, all_headers=False, part=None):
             msgpart = parts[
                 (part or config.get("default_part") or int(input("What part? "))) - 1
             ]
-            tempmail.write(msgpart.get_payload(decode=True))
+            if wrap:
+                tempmail.write(wrapped(msgpart.get_payload(decode=True)))
+            else:
+                tempmail.write(msgpart.get_payload(decode=True))
         tempmail.flush()
         subprocess.run([config["EDITOR"], tempmail.name])
 
@@ -861,6 +904,7 @@ def do_it_two_it(args):  # Shia LeBeouf!
                 mailnumber=args.mailnumber,
                 all_headers=args.all_headers,
                 part=args.part,
+                wrap=args.wrap,
             )
         elif args.action == "raw":
             return raw(config=config, mailnumber=args.mailnumber)

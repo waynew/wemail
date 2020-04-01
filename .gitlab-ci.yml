@@ -23,10 +23,8 @@ test:
 
 deploy:
   stage: deploy
-  variables:
-    TWINE_USERNAME: $TWINE_USERNAME
-    TWINE_PASSWORD: $TWINE_PASSWORD
-    TWINE_REPOSITORY: $TWINE_REPOSITORY
+  environment:
+    name: deploy-wemail
   script:
       - twine upload --repository-url https://upload.pypi.org/legacy/ dist/wemail-*.whl
   only:

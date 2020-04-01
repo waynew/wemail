@@ -450,6 +450,7 @@ def test_when_action_is_read_it_should_read(args_read, good_loaded_config):
             mailnumber=args_read.mailnumber,
             all_headers=args_read.all_headers,
             part=args_read.part,
+            wrap=args_read.wrap,
         )
 
 
@@ -751,6 +752,38 @@ def test_simple_single_mail_should_fire_external_viewer_with_email(good_loaded_c
     with mock.patch("subprocess.run", autospec=True) as fake_run:
         wemail.read(config=good_loaded_config, mailnumber=1)
         fake_run.assert_called_with([good_loaded_config["EDITOR"], mock.ANY])
+
+
+def test_read_single_email_with_wrap_arg_should_wrap_the_email(
+    good_loaded_config, temp_maildir
+):
+    lines = ["short", "long" * 100, "short"]
+    mailfile = pathlib.Path(temp_maildir, "cur", "sample.eml")
+    mailfile.write_text(
+        textwrap.dedent(
+            f"""\
+        From: Someone
+        To: Another
+        Subject: This is a basic email
+
+        {' '.join(lines)}
+        """
+        )
+    )
+    good_loaded_config["maildir"] = mailfile.parent.parent
+    actual_lines = None
+
+    def fake_editor(*args, **kwargs):
+        nonlocal actual_lines
+        with open(args[0][1]) as f:
+            actual_lines = f.read().strip().split("\n")
+
+    with mock.patch(
+        "subprocess.run", autospec=True, side_effect=fake_editor
+    ) as fake_run:
+        wemail.read(config=good_loaded_config, wrap=True, mailnumber=1)
+
+    assert actual_lines[-3:] == lines
 
 
 def test_list_should_list_the_messages(capsys, good_loaded_config):

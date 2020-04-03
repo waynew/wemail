@@ -168,6 +168,36 @@ def make_parser():
         help="Name of the folder to save to. If folder does not exist, it will be created after confirmation.",
     )
 
+    attachment_parser = subparsers.add_parser(
+        "attachment", help="Save an attachment or attachments from an email."
+    )
+    attachment_parser.set_defaults(action="attachment")
+    attachment_parser.add_argument(
+        "mailnumber", help="Message number to save the attachments from."
+    )
+    attachment_parser.add_argument(
+        "-p",
+        "--part",
+        default=None,
+        help="Message/attachment part number to save. 'all' will save all attachments in a zipfile. If no part is provided, we'll ask you.",
+    )
+    attachment_parser.add_argument(
+        "--name",
+        type=Path,
+        help="Where to save the attachment. If name is a directory, the provided filename will be used, or asked for if it's missing",
+    )
+    attachment_parser.add_argument(
+        "--nozip",
+        action="store_true",
+        help="Do not save attachments in a zipfile - save them as individual files in the directory.",
+    )
+    attachment_parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite existing files without asking.",
+    )
+
     # TODO: It would be pretty cool to have capability to read emails in different viewer, like html open in a browser -W. Werner, 2019-12-06
     read_parser = subparsers.add_parser("read", help="Read a single message")
     read_parser.set_defaults(action="read")
@@ -548,6 +578,12 @@ def save(*, config, maildir, mailnumber, target_folder):
         print(f"No mail found with number {mailnumber}")
 
 
+def save_attachment(
+    *, config, maildir, mailnumber, part, name, nozip=False, force=False
+):
+    ...
+
+
 def remove(*, config, maildir, mailnumber):
     save(
         config=config,
@@ -914,6 +950,16 @@ def do_it_two_it(args):  # Shia LeBeouf!
                 maildir=config["maildir"] / "cur",
                 mailnumber=args.mailnumber,
                 target_folder=args.folder,
+            )
+        elif args.action == "attachment":
+            return save_attachment(
+                config=config,
+                maildir=config["maildir"] / "cur",
+                mailnumber=args.mailnumber,
+                part=args.part,
+                name=args.name,
+                nozip=args.nozip,
+                force=args.force,
             )
         elif args.action == "remove":
             return remove(

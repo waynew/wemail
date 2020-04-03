@@ -287,6 +287,14 @@ def args_save():
 
 
 @pytest.fixture()
+def args_save_attachment():
+    args = parser.parse_args(
+        ["attachment", "1", "-p", "3", "--name", "blerpy-derp.txt"]
+    )
+    return args
+
+
+@pytest.fixture()
 def args_remove():
     args = parser.parse_args(["rm", "1"])
     return args
@@ -437,6 +445,24 @@ def test_when_action_is_save_it_should_save(args_save, good_loaded_config):
             maildir=good_loaded_config["maildir"] / "cur",
             mailnumber=args_save.mailnumber,
             target_folder=args_save.folder,
+        )
+
+
+def test_when_save_attachment_is_called_it_should_save_attachment(
+    args_save_attachment, good_loaded_config
+):
+    patch_config = mock.patch("wemail.load_config", return_value=good_loaded_config)
+    patch_save_attachment = mock.patch("wemail.save_attachment", autospec=True)
+    with patch_save_attachment as fake_save, patch_config:
+        wemail.do_it_two_it(args_save_attachment)
+        fake_save.assert_called_with(
+            config=good_loaded_config,
+            maildir=good_loaded_config["maildir"] / "cur",
+            mailnumber=args_save_attachment.mailnumber,
+            part=args_save_attachment.part,
+            name=args_save_attachment.name,
+            nozip=args_save_attachment.nozip,
+            force=args_save_attachment.force,
         )
 
 
@@ -1233,6 +1259,33 @@ def test_when_save_is_called_it_should_print_which_message_was_saved(
 
 # End save email tests }}}
 
+# {{{ Save attachment tests
+def test_when_save_attachment_is_called_and_attachment_has_no_filename_or_type_it_should_save_filename_with_provided():
+    pytest.skip()
+
+
+def test_when_save_attachment_is_called_and_enter_is_sent_it_should_save_filename_with_attachment_filename():
+    pytest.skip()
+
+
+def test_when_save_attachment_is_called_and_filename_is_provided_it_should_use_the_user_filename():
+    pytest.skip()
+
+
+def test_when_filename_is_given_without_extension_and_attachment_has_type_it_should_add_extension():
+    pytest.skip()
+
+
+def test_when_filename_is_given_with_extension_it_should_override_attachment_extension():
+    pytest.skip()
+
+
+def test_when_filename_is_a_path_then_attachment_should_save_to_that_path():
+    pytest.skip()
+
+
+# }}} End save attachment tests
+
 # {{{ commonmark(down) tests
 def test_commonmarkdown_should_produce_marked_multipart_message(good_draft):
     good_draft["X-CommonMark"] = "True"
@@ -1574,7 +1627,6 @@ def test_if_all_recipients_exist_they_should_be_returned():
 
 
 # }}} end pretty_recipients tests
-
 
 # {{{ filter tests
 

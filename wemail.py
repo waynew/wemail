@@ -58,7 +58,7 @@ except ImportError as e:  # pragma: no cover
             " or commonmark"
         )
 
-__version__ = "2020.03.31"
+__version__ = "2020.04.03b1"
 POLICY = EmailPolicy(utf8=True)
 CONFIG_PATH = Path("~/.wemailrc").expanduser()
 _parser = BytesParser(_class=EmailMessage, policy=POLICY)
@@ -178,6 +178,7 @@ def make_parser():
     attachment_parser.add_argument(
         "-p",
         "--part",
+        type=int,
         default=None,
         help="Message/attachment part number to save. 'all' will save all attachments in a zipfile. If no part is provided, we'll ask you.",
     )
@@ -578,10 +579,23 @@ def save(*, config, maildir, mailnumber, target_folder):
         print(f"No mail found with number {mailnumber}")
 
 
-def save_attachment(
-    *, config, maildir, mailnumber, part, name, nozip=False, force=False
-):
-    ...
+def save_attachment(*, config, mailnumber, part, name, nozip=False, force=False):
+    mailfile = sorted_mailfiles(maildir=config["maildir"] / "cur")[
+        abs(int(mailnumber)) - 1
+    ]
+    with mailfile.open("rb") as f:
+        msg = _parser.parse(f)
+        for i, msgpart in enumerate(
+            (p for p in msg.walk() if not p.is_multipart()), start=1
+        ):
+            if i == part:
+                # TODO: It's possible that someone could do a path traversal attack here, I think -W. Werner, 2020-04-03
+                fname = msgpart.get_filename()
+                target = Path(name or "", fname)
+                if msgpart.get_content_maintype() == "text":
+                    target.write_text(msgpart.get_content())
+                else:
+                    target.write_bytes(msgpart.get_content())
 
 
 def remove(*, config, maildir, mailnumber):
@@ -954,7 +968,6 @@ def do_it_two_it(args):  # Shia LeBeouf!
         elif args.action == "attachment":
             return save_attachment(
                 config=config,
-                maildir=config["maildir"] / "cur",
                 mailnumber=args.mailnumber,
                 part=args.part,
                 name=args.name,

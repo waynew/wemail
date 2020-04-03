@@ -457,7 +457,6 @@ def test_when_save_attachment_is_called_it_should_save_attachment(
         wemail.do_it_two_it(args_save_attachment)
         fake_save.assert_called_with(
             config=good_loaded_config,
-            maildir=good_loaded_config["maildir"] / "cur",
             mailnumber=args_save_attachment.mailnumber,
             part=args_save_attachment.part,
             name=args_save_attachment.name,
@@ -1280,7 +1279,50 @@ def test_when_filename_is_given_with_extension_it_should_override_attachment_ext
     pytest.skip()
 
 
-def test_when_filename_is_a_path_then_attachment_should_save_to_that_path():
+def test_when_filename_is_a_dir_then_attachment_should_save_to_that_path():
+    pytest.skip()
+
+
+def test_when_filename_is_a_dir_and_nozip_is_false_it_should_save_zip_of_attachments():
+    pytest.skip()
+
+
+def test_when_filename_is_a_dir_and_force_is_passed_it_should_overwrite_files_without_prompt(
+    good_loaded_config
+):
+    expected_text = "This is some sweet sweet email"
+    with tempfile.TemporaryDirectory() as tempdir:
+        samplefile = pathlib.Path(tempdir, "fnord.txt")
+        plainmail = textwrap.dedent(
+            f"""\
+        From: you@example.com
+        To: you@example.com
+        Subject: bloop
+        Content-Type: multipart/mixed; boundary="===============1191262262=="
+
+        --===============1191262262==
+        Content-Type: text/plain; charset="utf-8"
+        Content-Transfer-Encoding: 7bit
+        Content-Disposition: attachment; filename="{samplefile.name}"
+        MIME-Version: 1.0
+
+        {expected_text}
+        --===============1191262262==--
+        """
+        )
+        (good_loaded_config["maildir"] / "cur" / "test.eml").write_text(plainmail)
+        samplefile.write_text("This is not the text you're looking for")
+
+        wemail.save_attachment(
+            config=good_loaded_config, mailnumber="1", part=1, name=tempdir, force=True
+        )
+
+        assert samplefile.read_text() == expected_text
+
+
+def test_when_no_matching_part_is_found_error_message_should_be_shown(
+    good_loaded_config
+):
     pytest.skip()
 
 

@@ -551,7 +551,7 @@ def get_templates(*, dirname):
 
 def reply(*, config, mailfile, reply_all=False, keep_attachments=False):
     if mailfile.name.isdigit():
-        curmaildir = config["maildir"] / "cur"
+        curmaildir = config["curdir"]
         mailfile = sorted_mailfiles(maildir=curmaildir)[int(mailfile.name) - 1]
     msg = _parser.parsebytes(mailfile.read_bytes())
     msg = replyify(
@@ -585,9 +585,7 @@ def save(*, config, maildir, mailnumber, target_folder):
 
 
 def save_attachment(*, config, mailnumber, part, name, nozip=False, force=False):
-    mailfile = sorted_mailfiles(maildir=config["maildir"] / "cur")[
-        abs(int(mailnumber)) - 1
-    ]
+    mailfile = sorted_mailfiles(maildir=config["curdir"])[abs(int(mailnumber)) - 1]
     with mailfile.open("rb") as f:
         msg = _parser.parse(f)
         for i, msgpart in enumerate(
@@ -830,7 +828,8 @@ def iter_messages(*, maildir):
 
 
 def list_messages(*, config):
-    maildir = config["maildir"] / "cur"
+    # TODO: This should be configurable between curdir and the absolute maildir -W. Werner, 2020-08-14
+    maildir = config["curdir"]
     for i, msg in enumerate(iter_headers(maildir=maildir), start=1):
         if "date" in msg:
             date = parsedate_to_datetime(msg["date"])
@@ -844,12 +843,12 @@ def list_messages(*, config):
 
 
 def raw(*, config, mailnumber):
-    mailfile = sorted_mailfiles(maildir=config["maildir"] / "cur")[mailnumber - 1]
+    mailfile = sorted_mailfiles(maildir=config["curdir"])[mailnumber - 1]
     subprocess.run([config["EDITOR"], mailfile.resolve()])
 
 
 def read(*, config, mailnumber, all_headers=False, part=None, wrap=False):
-    message_iter = iter_messages(maildir=config["maildir"] / "cur")
+    message_iter = iter_messages(maildir=config["curdir"])
     # TODO: This works but it doesn't have comprehensive test coverage -W. Werner, 2019-12-06
     # Also there is another issue. If there is a part with a filename, we should try and respect that filename. This should kind of get unwound. Also it's not super effective
     # to go parsing all of the emails *shrugs*
@@ -918,6 +917,7 @@ def load_config(config_file):
         .expanduser()
         .resolve()
     )
+    config["curdir"] = Path().resolve()
     config["EDITOR"] = config.get(
         "EDITOR", os.environ.get("EDITOR", os.environ.get("VISUAL", "nano"))
     )
@@ -966,7 +966,7 @@ def do_it_two_it(args):  # Shia LeBeouf!
         elif args.action == "save":
             return save(
                 config=config,
-                maildir=config["maildir"] / "cur",
+                maildir=config["curdir"],
                 mailnumber=args.mailnumber,
                 target_folder=args.folder,
             )

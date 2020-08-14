@@ -445,11 +445,16 @@ def get_sender(*, msg, config):
     recipients = set()
     all_recipients = recipients_list(msg)
     if len(all_recipients) > 1:
+        all_addrs = [addr for _, addr in all_recipients]
         for name, addr in all_recipients:
             if addr in config:
                 recipients.add(config[addr].get("from", formataddr((name, addr))))
         recipients = list(sorted(recipients))
-        if len(recipients) == 1:
+        if not recipients:
+            print("ERROR: No recipient found in config. Possible addresses:")
+            print("\t", "\n\t".join(all_addrs), sep="")
+            raise WEmailError()
+        elif len(recipients) == 1:
             return recipients[0]
         else:
             print("Found multiple possible senders:")

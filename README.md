@@ -1,3 +1,9 @@
+# We've Moved!
+
+This project has moved to https://gitlab.com/waynew/wemail
+
+Find us over there!
+
 # WEmail
 
 (Or, Wayne's Email)

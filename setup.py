@@ -12,7 +12,8 @@ changelog = (Path(__file__).parent / "CHANGELOG.txt").read_text()
 readme = (Path(__file__).parent / "README.md").read_text()
 long_desc = readme + "\n\n---\n\n" + changelog
 
-tests_require = ["pytest"]
+extras_require = ["mistletoe"]
+tests_require = ["pytest", "pytest-cov", "aiosmtpd"]
 setup(
     name="wemail",
     version=__version__,
@@ -28,5 +29,9 @@ setup(
     long_description=long_desc,
     long_description_content_type="text/markdown",
     tests_require=tests_require,
-    extras_require={"test": tests_require, "build": ["wheel"]},
+    extras_require={
+        "test": tests_require + extras_require,
+        "build": ["wheel"],
+        "html": extras_require,
+    },
 )

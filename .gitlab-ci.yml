@@ -1,0 +1,31 @@
+image: python:3.8-slim-buster
+
+stages:
+  - test
+  - deploy
+
+before_script:
+  - pip install twine wheel
+  - python setup.py bdist_wheel
+  - echo "{}" > ~/.wemailrc
+
+test:
+  stage: test
+  script:
+    - python -m pip install --user wemail[test,html] --find-links dist
+    - ~/.local/bin/py.test --cov=wemail --cov-report term-missing --cov-report xml:tests.xml tests.py
+  artifacts:
+    paths:
+      - tests.xml
+    reports:
+      junit: tests.xml
+
+
+deploy:
+  stage: deploy
+  environment:
+    name: deploy-wemail
+  script:
+      - twine upload --repository-url https://upload.pypi.org/legacy/ dist/wemail-*.whl
+  only:
+    - tags
